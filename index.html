@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="description" content="カジワラファーム様向け孵化率予測システム">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <title>孵化率予測システム - カジワラファーム</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -15,6 +14,7 @@
             padding-bottom: env(safe-area-inset-bottom);
             padding-left: env(safe-area-inset-left);
             padding-right: env(safe-area-inset-right);
+            font-size: 18px;
         }
         html { scroll-behavior: smooth; }
         @keyframes fadeIn {
@@ -27,834 +27,895 @@
             to { opacity: 1; transform: translateX(-50%) translateY(0); }
         }
         .toast-anim { animation: slideUp 0.3s ease-out; }
-        @media print {
-            .no-print { display: none !important; }
-            body { background: white; }
-            .shadow-xl, .shadow-lg, .shadow-sm { box-shadow: none !important; }
-        }
     </style>
 </head>
 <body class="bg-gray-50">
-    <div id="root"></div>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script type="text/babel">
-        const { useState, useEffect } = React;
+<div id="root"></div>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
+<script type="text/babel">
+const { useState, useEffect, useMemo } = React;
 
-        // ===== アイコン =====
-        const Calendar = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>;
-        const Plus = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>;
-        const Trash2 = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>;
-        const ChevronRight = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>;
-        const History = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>;
-        const Save = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>;
-        const X = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>;
-        const Edit2 = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>;
-        const BarChart3 = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>;
-        const TrendingUp = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>;
-        const Download = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>;
-        const Upload = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>;
-        const AlertCircle = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>;
-        const CheckCircle = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>;
-        const Printer = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>;
+// ===== 計算ロジック =====
+const piecewiseLinear = (age) => {
+    if (age < 165) return 20.0;
+    if (age <= 230) return 20 + (40 - 20) * (age - 165) / (230 - 165);
+    if (age <= 250) return 40.0;
+    if (age <= 530) return 40 - (40 - 35) * (age - 250) / (530 - 250);
+    return 35 - (35 - 32) * Math.min((age - 530) / 200, 1.0);
+};
+const asymmetricNormal = (age) => {
+    const sigma = age <= 240 ? 32 : 300;
+    return 24.5 + 15.5 * Math.exp(-0.5 * Math.pow((age - 240) / sigma, 2));
+};
+const storageFactor = (days) => {
+    if (days <= 7) return 1.0;
+    if (days <= 10) return 0.95;
+    if (days <= 16) return 0.85;
+    return 0.60;
+};
+const seasonFactor = (month) => {
+    if (month >= 6 && month <= 9) return 0.92;
+    if (month === 1) return 0.95;
+    return 1.0;
+};
+const calcOneFarm = (age, eggs, storageDays, month) => {
+    const a = parseInt(age) || 0;
+    const e = parseInt(eggs) || 0;
+    const d = parseInt(storageDays) || 0;
+    if (a <= 0 || e <= 0) return null;
+    const sf = storageFactor(d);
+    const seaf = seasonFactor(month);
+    const linRate = piecewiseLinear(a);
+    const norRate = asymmetricNormal(a);
+    const linTotal = Math.round(e * (linRate / 100) * sf * seaf);
+    const norTotal = Math.round(e * (norRate / 100) * sf * seaf);
+    return {
+        linear: { totalChicks: linTotal, femaleChicks: Math.round(linTotal * 0.61), hatchRate: ((linTotal / e) * 100).toFixed(1) },
+        normal: { totalChicks: norTotal, femaleChicks: Math.round(norTotal * 0.61), hatchRate: ((norTotal / e) * 100).toFixed(1) }
+    };
+};
+const calcTotals = (farmResults, totalEggs) => {
+    if (totalEggs === 0) return null;
+    const linTotal = farmResults.reduce((s, r) => s + (r ? r.linear.totalChicks : 0), 0);
+    const norTotal = farmResults.reduce((s, r) => s + (r ? r.normal.totalChicks : 0), 0);
+    return {
+        totalEggs,
+        linear: { totalChicks: linTotal, femaleChicks: Math.round(linTotal * 0.61), hatchRate: ((linTotal / totalEggs) * 100).toFixed(1) },
+        normal: { totalChicks: norTotal, femaleChicks: Math.round(norTotal * 0.61), hatchRate: ((norTotal / totalEggs) * 100).toFixed(1) }
+    };
+};
+const getMonth = (dateStr) => new Date(dateStr + 'T00:00:00').getMonth() + 1;
+const getSeason = (month) => {
+    if (month >= 3 && month <= 5) return 'spring';
+    if (month >= 6 && month <= 8) return 'summer';
+    if (month >= 9 && month <= 11) return 'autumn';
+    return 'winter';
+};
+const fmtDate = (dateStr) => new Date(dateStr + 'T00:00:00').toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' });
+const padZ = (n) => String(n).padStart(2, '0');
 
-        // ===== 計算ロジック =====
-        const piecewiseLinear = (age) => {
-            if (age < 165) return 20.0;
-            if (age <= 230) return 20 + (40 - 20) * (age - 165) / (230 - 165);
-            if (age <= 250) return 40.0;
-            if (age <= 530) return 40 - (40 - 35) * (age - 250) / (530 - 250);
-            return 35 - (35 - 32) * Math.min((age - 530) / 200, 1.0);
-        };
-        const asymmetricNormal = (age) => {
-            const sigma = age <= 240 ? 32 : 300;
-            return 24.5 + 15.5 * Math.exp(-0.5 * Math.pow((age - 240) / sigma, 2));
-        };
-        const storageDaysFactor = (days) => {
-            if (days <= 7) return 1.0;
-            if (days <= 10) return 0.95;
-            if (days <= 16) return 0.85;
-            return 0.60;
-        };
-        const seasonFactor = (month) => {
-            if (month >= 6 && month <= 9) return 0.92;
-            if (month === 1) return 0.95;
-            return 1.0;
-        };
-        const calculateMultiFarms = (farms, date, method = 'linear') => {
-            let totalEggs = 0, weightedStorageDays = 0, totalPredictedChicks = 0;
-            const month = new Date(date + 'T00:00:00').getMonth() + 1;
-            farms.forEach(farm => {
-                const eggs = parseInt(farm.eggs);
-                const age = parseInt(farm.age);
-                const storageDays = parseInt(farm.storageDays);
-                totalEggs += eggs;
-                weightedStorageDays += eggs * storageDays;
-                const baseRate = method === 'linear' ? piecewiseLinear(age) : asymmetricNormal(age);
-                totalPredictedChicks += eggs * (baseRate / 100) * storageDaysFactor(storageDays) * seasonFactor(month);
-            });
-            const totalChicks = Math.round(totalPredictedChicks);
-            return {
-                totalEggs,
-                avgStorageDays: (weightedStorageDays / totalEggs).toFixed(1),
-                totalChicks,
-                femaleChicks: Math.round(totalChicks * 0.61),
-                hatchRate: ((totalChicks / totalEggs) * 100).toFixed(1)
-            };
-        };
-        const getSeasonFromMonth = (month) => {
-            if (month >= 3 && month <= 5) return 'spring';
-            if (month >= 6 && month <= 8) return 'summer';
-            if (month >= 9 && month <= 11) return 'autumn';
-            return 'winter';
-        };
-        const formatDate = (dateStr) =>
-            new Date(dateStr + 'T00:00:00').toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' });
+// ===== マイグレーション =====
+const migrateToV4 = (r) => ({
+    ...r,
+    farms: (r.farms || []).map(f => ({
+        id: f.id || (Date.now() + Math.random()),
+        farmName: f.farmName || '',
+        parentAge: f.parentAge || parseInt(f.age) || 0,
+        eggCount: f.eggCount || parseInt(f.eggs) || 0,
+        storageDays: f.storageDays || 0,
+        predictions: f.predictions || null,
+        actual: f.actual || { femaleChicks: null, totalChicks: null, recordedDate: null }
+    })),
+    totalPredictions: r.totalPredictions || r.predictions || null
+});
 
-        // ===== モーダル =====
-        function Modal({ config, onClose }) {
-            if (!config) return null;
-            return (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{backgroundColor:'rgba(0,0,0,0.5)'}}>
-                    <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm fade-in">
-                        <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 ${config.isError ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
-                            <AlertCircle />
-                        </div>
-                        <p className="text-center text-gray-800 text-lg font-medium mb-6 whitespace-pre-line">{config.message}</p>
-                        {config.type === 'alert' ? (
-                            <button onClick={onClose} className="w-full py-3 bg-blue-600 active:bg-blue-700 text-white font-bold rounded-xl transition-colors">
-                                OK
-                            </button>
-                        ) : (
-                            <div className="flex gap-3">
-                                <button onClick={() => { config.onConfirm(); onClose(); }} className="flex-1 py-3 bg-red-600 active:bg-red-700 text-white font-bold rounded-xl transition-colors">
-                                    {config.confirmLabel || '削除'}
-                                </button>
-                                <button onClick={onClose} className="flex-1 py-3 bg-gray-100 active:bg-gray-200 text-gray-700 font-medium rounded-xl transition-colors">
-                                    キャンセル
-                                </button>
-                            </div>
-                        )}
+// ===== モーダル =====
+function Modal({ config, onClose }) {
+    if (!config) return null;
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div className="bg-white rounded-2xl shadow-2xl p-7 w-full max-w-sm fade-in">
+                <p className="text-center text-gray-800 text-xl font-medium mb-6 whitespace-pre-line">{config.message}</p>
+                {config.type === 'alert' ? (
+                    <button onClick={onClose} className="w-full py-4 bg-blue-600 active:bg-blue-700 text-white text-lg font-bold rounded-xl">OK</button>
+                ) : (
+                    <div className="flex gap-3">
+                        <button onClick={() => { config.onConfirm(); onClose(); }}
+                            className={`flex-1 py-4 text-lg font-bold rounded-xl text-white ${config.danger ? 'bg-red-600 active:bg-red-700' : 'bg-blue-600 active:bg-blue-700'}`}>
+                            {config.confirmLabel || '確認'}
+                        </button>
+                        <button onClick={onClose} className="flex-1 py-4 bg-gray-100 active:bg-gray-200 text-gray-700 text-lg font-medium rounded-xl">
+                            キャンセル
+                        </button>
                     </div>
-                </div>
-            );
-        }
+                )}
+            </div>
+        </div>
+    );
+}
 
-        // ===== トースト =====
-        function Toast({ message, onHide }) {
-            useEffect(() => {
-                const t = setTimeout(onHide, 2500);
-                return () => clearTimeout(t);
-            }, []);
-            return (
-                <div className="fixed bottom-8 left-1/2 z-40 toast-anim" style={{transform:'translateX(-50%)'}}>
-                    <div className="flex items-center gap-2 bg-gray-900 text-white px-5 py-3 rounded-full shadow-xl text-sm font-medium whitespace-nowrap">
-                        <CheckCircle /> {message}
+// ===== トースト =====
+function Toast({ message, onHide }) {
+    useEffect(() => { const t = setTimeout(onHide, 2500); return () => clearTimeout(t); }, []);
+    return (
+        <div className="fixed bottom-8 left-1/2 z-40 toast-anim" style={{ transform: 'translateX(-50%)' }}>
+            <div className="bg-gray-900 text-white px-6 py-4 rounded-full shadow-xl text-lg font-medium whitespace-nowrap">
+                ✓ {message}
+            </div>
+        </div>
+    );
+}
+
+// ===== メインアプリ =====
+function App() {
+    const [screen, setScreen] = useState('top');
+    const [records, setRecords] = useState([]);
+    const [calcModel, setCalcModelState] = useState(() => localStorage.getItem('calcModel') || 'linear');
+    const [modalConfig, setModalConfig] = useState(null);
+    const [toast, setToast] = useState(null);
+
+    const setCalcModel = (m) => { setCalcModelState(m); localStorage.setItem('calcModel', m); };
+
+    useEffect(() => {
+        try {
+            const v4 = localStorage.getItem('hatcheryRecordsV4');
+            if (v4) { const p = JSON.parse(v4); if (Array.isArray(p)) { setRecords(p); return; } }
+            const v3 = localStorage.getItem('hatcheryRecordsV3');
+            if (v3) { const p = JSON.parse(v3); if (Array.isArray(p)) { const m = p.map(migrateToV4); setRecords(m); localStorage.setItem('hatcheryRecordsV4', JSON.stringify(m)); } }
+        } catch { showAlert('データの読み込みに失敗しました。', true); }
+    }, []);
+
+    const persistRecords = (nr) => {
+        try {
+            localStorage.setItem('hatcheryRecordsV4', JSON.stringify(nr));
+            setRecords(nr);
+            return true;
+        } catch (e) {
+            showAlert(e.name === 'QuotaExceededError' ? '保存容量が不足しています。古い記録を削除してください。' : 'データの保存に失敗しました。', true);
+            return false;
+        }
+    };
+    const showAlert = (msg, isErr = false) => setModalConfig({ type: 'alert', message: msg, isError: isErr });
+    const showConfirm = (msg, onConfirm, label = '確認', danger = false) => setModalConfig({ type: 'confirm', message: msg, onConfirm, confirmLabel: label, danger });
+    const showToast = (msg) => setToast(msg);
+    const addRecord = (r) => { if (persistRecords([r, ...records])) showToast('記録として保存しました'); };
+    const updateRecord = (id, fn) => persistRecords(records.map(r => r.id === id ? fn(r) : r));
+    const deleteRecord = (id) => showConfirm('この記録を削除しますか？', () => { if (persistRecords(records.filter(r => r.id !== id))) showToast('記録を削除しました'); }, '削除', true);
+
+    const shared = { screen, setScreen, records, addRecord, updateRecord, deleteRecord, persistRecords, showAlert, showConfirm, showToast, calcModel, setCalcModel };
+
+    return (
+        <>
+            <Modal config={modalConfig} onClose={() => setModalConfig(null)} />
+            {toast && <Toast message={toast} onHide={() => setToast(null)} />}
+            {screen === 'top'         && <TopScreen {...shared} />}
+            {screen === 'admin'       && <AdminScreen {...shared} />}
+            {screen === 'calculation' && <CalculationScreen {...shared} />}
+            {screen === 'results'     && <HatchResultsScreen {...shared} />}
+        </>
+    );
+}
+
+// ===== トップページ =====
+function TopScreen({ setScreen, records, calcModel }) {
+    const modelLabel = calcModel === 'normal' ? '非対称正規分布' : '区分線形';
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+            <header className="bg-white shadow-sm">
+                <div className="max-w-2xl mx-auto px-4 sm:px-6 py-5 flex justify-between items-center">
+                    <div>
+                        <h1 className="text-3xl sm:text-4xl font-bold text-gray-800">🐣 孵化率予測システム</h1>
+                        <p className="text-base text-gray-500 mt-1">カジワラファーム</p>
                     </div>
+                    <button onClick={() => setScreen('admin')}
+                        className="flex flex-col items-center px-4 py-3 bg-gray-100 active:bg-gray-200 text-gray-600 rounded-2xl text-base font-medium">
+                        <span className="text-2xl mb-0.5">⚙️</span>
+                        <span>管理画面</span>
+                    </button>
                 </div>
-            );
+            </header>
+            <main className="max-w-2xl mx-auto px-4 sm:px-6 py-8 space-y-4">
+                {/* 計算モデル表示 */}
+                <div className="bg-white rounded-xl px-5 py-3 flex items-center gap-2 shadow-sm">
+                    <span className="text-gray-500 text-base">使用中のモデル：</span>
+                    <span className="font-bold text-blue-700 text-base">{modelLabel}モデル</span>
+                    <button onClick={() => setScreen('admin')} className="ml-auto text-sm text-blue-500 underline">変更</button>
+                </div>
+
+                {/* 入卵数の計算 */}
+                <button onClick={() => setScreen('calculation')}
+                    className="w-full bg-white rounded-2xl shadow-xl p-8 sm:p-10 text-left active:shadow-md transition-all border-2 border-transparent hover:border-blue-200">
+                    <div className="text-5xl mb-4">🧮</div>
+                    <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-3">入卵数の計算</h2>
+                    <p className="text-lg text-gray-500 leading-relaxed">
+                        入卵数・日齢・貯卵日数を入力すると<br />
+                        孵化予測がリアルタイムで表示されます。<br />
+                        数値を変えながら最適な入卵数を確認できます。
+                    </p>
+                    <div className="mt-5 inline-flex items-center gap-1 text-blue-600 font-bold text-xl">
+                        計算を開始する →
+                    </div>
+                </button>
+
+                {/* 孵化実績入力 */}
+                <button onClick={() => setScreen('results')}
+                    className="w-full bg-white rounded-2xl shadow-xl p-8 sm:p-10 text-left active:shadow-md transition-all border-2 border-transparent hover:border-purple-200">
+                    <div className="text-5xl mb-4">📋</div>
+                    <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-3">孵化実績入力</h2>
+                    <p className="text-lg text-gray-500 leading-relaxed">
+                        カレンダーから日付を選んで、<br />
+                        農場ごとに実際の孵化羽数を入力できます。<br />
+                        予測と実績の精度を農場別に確認できます。
+                    </p>
+                    <div className="mt-3 inline-block px-4 py-1.5 bg-purple-50 text-purple-700 rounded-full text-base font-medium">
+                        {records.length}件の記録
+                    </div>
+                    <div className="mt-3 flex items-center gap-1 text-purple-600 font-bold text-xl">
+                        実績を入力する →
+                    </div>
+                </button>
+            </main>
+        </div>
+    );
+}
+
+// ===== 管理画面 =====
+function AdminScreen({ setScreen, calcModel, setCalcModel }) {
+    const MODELS = [
+        {
+            key: 'linear',
+            name: '区分線形モデル',
+            badge: '推奨',
+            icon: '📐',
+            summary: 'お母様の経験に基づいた実用的なモデルです。親鳥の日齢を段階ごとに区切り、それぞれの孵化率を設定しています。調整しやすく、結果が直感的に理解できます。',
+            rows: [
+                { range: '165日以下', rate: '20%', note: '若い親鳥はまだ成熟していません' },
+                { range: '165〜230日', rate: '20% → 40%', note: '成長期：孵化率が上昇します' },
+                { range: '230〜250日', rate: '40%（ピーク）', note: 'ベストな産卵時期です' },
+                { range: '250〜530日', rate: '40% → 35%', note: '成熟期：ゆっくり低下します' },
+                { range: '530日以上', rate: '35% → 32%', note: '高齢になるにつれ低下します' },
+            ]
+        },
+        {
+            key: 'normal',
+            name: '非対称正規分布モデル',
+            badge: '参考',
+            icon: '📊',
+            summary: '生物学的な理論に基づくモデルです。孵化率の変化がなめらかな曲線で表されます。若い親鳥ではすばやく変化し、高齢ではゆっくり変化するという非対称な特性を持ちます。',
+            rows: [
+                { range: '240日齢', rate: '40%（ピーク）', note: '理論上の最適日齢' },
+                { range: '若い方向', rate: '急激に変化', note: '日齢が低いと急速に孵化率が落ちます' },
+                { range: '高齢方向', rate: 'ゆっくり変化', note: '高齢でも比較的なだらかに低下します' },
+            ],
+            formula: '孵化率 = 24.5 + 15.5 × e^(−0.5×((日齢−240)/σ)²)\nσ = 32（若い方向） / 300（高齢方向）'
         }
+    ];
 
-        // ===== メインアプリ =====
-        function HatcheryApp() {
-            const [screen, setScreen] = useState('date-select');
-            const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-            const [farms, setFarms] = useState([]);
-            const [editingFarm, setEditingFarm] = useState(null);
-            const [isEditing, setIsEditing] = useState(false);
-            const [resultLinear, setResultLinear] = useState(null);
-            const [resultNormal, setResultNormal] = useState(null);
-            const [activeMethod, setActiveMethod] = useState('linear');
-            const [records, setRecords] = useState([]);
-            const [modalConfig, setModalConfig] = useState(null);
-            const [toast, setToast] = useState(null);
-            const [errors, setErrors] = useState({});
+    const CORRECTIONS = [
+        {
+            title: '貯卵日数の補正',
+            icon: '🥚',
+            items: [
+                { label: '7日以内', value: '補正なし（×1.00）', good: true },
+                { label: '8〜10日', value: '5%低下（×0.95）', good: true },
+                { label: '11〜16日', value: '15%低下（×0.85）', good: false },
+                { label: '17日以上', value: '40%低下（×0.60）', good: false },
+            ]
+        },
+        {
+            title: '季節補正',
+            icon: '🌡️',
+            items: [
+                { label: '春・秋・冬（2〜5月、10〜12月）', value: '補正なし（×1.00）', good: true },
+                { label: '1月', value: '5%低下（×0.95）', good: true },
+                { label: '夏（6〜9月）', value: '8%低下（×0.92）', good: false },
+            ]
+        }
+    ];
 
-            const farmOptions = ['農場A', '農場B', '農場C', '農場D', '農場E', 'その他'];
-            const ageButtons = [
-                { label: '170-200日齢', value: 185 },
-                { label: '230-250日齢', value: 240 },
-                { label: '260-350日齢', value: 305 },
-                { label: '430日齢以上', value: 430 }
-            ];
-
-            const showAlert = (message, isError = false) => setModalConfig({ type: 'alert', message, isError });
-            const showConfirm = (message, onConfirm, confirmLabel = '削除') => setModalConfig({ type: 'confirm', message, onConfirm, confirmLabel });
-            const showToast = (message) => setToast(message);
-
-            // データ読み込み
-            useEffect(() => {
-                try {
-                    const saved = localStorage.getItem('hatcheryRecordsV3');
-                    if (saved) {
-                        const parsed = JSON.parse(saved);
-                        if (Array.isArray(parsed)) {
-                            setRecords(parsed);
-                        } else {
-                            throw new Error('Invalid format');
-                        }
-                    }
-                } catch (e) {
-                    try {
-                        const raw = localStorage.getItem('hatcheryRecordsV3');
-                        if (raw) localStorage.setItem('hatcheryRecordsV3_backup', raw);
-                        localStorage.removeItem('hatcheryRecordsV3');
-                    } catch {}
-                    showAlert('保存データの読み込みに失敗しました。データをリセットしました。', true);
-                }
-            }, []);
-
-            // データ保存
-            const saveRecords = (newRecords) => {
-                try {
-                    localStorage.setItem('hatcheryRecordsV3', JSON.stringify(newRecords));
-                    setRecords(newRecords);
-                    return true;
-                } catch (e) {
-                    if (e.name === 'QuotaExceededError') {
-                        showAlert('保存容量が不足しています。古い記録を削除してから再度お試しください。', true);
-                    } else {
-                        showAlert('データの保存に失敗しました。ブラウザの設定を確認してください。', true);
-                    }
-                    return false;
-                }
-            };
-
-            // バリデーション
-            const validateFarm = (farm) => {
-                const errs = {};
-                const finalName = farm.farmName === 'その他' ? farm.customFarmName : farm.farmName;
-                if (!finalName || !finalName.trim()) errs.farmName = '農場を選択してください';
-                if (!farm.age) errs.age = '親鳥日齢を選択してください';
-                const eggs = parseInt(farm.eggs);
-                if (!farm.eggs || isNaN(eggs)) errs.eggs = '入卵数を入力してください';
-                else if (eggs <= 0) errs.eggs = '1個以上を入力してください';
-                else if (eggs > 999999) errs.eggs = '最大999,999個まで入力できます';
-                const days = parseInt(farm.storageDays);
-                if (farm.storageDays === '' || isNaN(days)) errs.storageDays = '貯卵日数を入力してください';
-                else if (days < 0) errs.storageDays = '0日以上を入力してください';
-                else if (days > 30) errs.storageDays = '最大30日まで入力できます';
-                return errs;
-            };
-
-            const addFarm = () => {
-                setErrors({});
-                setEditingFarm({ id: Date.now(), farmName: '', age: '', eggs: '', storageDays: '', customFarmName: '' });
-                setIsEditing(false);
-            };
-            const editFarm = (farm) => {
-                setErrors({});
-                setEditingFarm({ ...farm });
-                setIsEditing(true);
-            };
-            const saveFarm = () => {
-                const errs = validateFarm(editingFarm);
-                if (Object.keys(errs).length > 0) { setErrors(errs); return; }
-                const finalFarmName = editingFarm.farmName === 'その他' ? editingFarm.customFarmName.trim() : editingFarm.farmName;
-                const farmData = { ...editingFarm, farmName: finalFarmName };
-                delete farmData.customFarmName;
-                if (isEditing) {
-                    setFarms(farms.map(f => f.id === farmData.id ? farmData : f));
-                } else {
-                    setFarms([...farms, farmData]);
-                }
-                setErrors({});
-                setEditingFarm(null);
-                setIsEditing(false);
-            };
-            const deleteFarm = (id) => {
-                showConfirm('この農場データを削除しますか？', () => setFarms(farms.filter(f => f.id !== id)));
-            };
-
-            const calculate = () => {
-                if (farms.length === 0) { showAlert('農場データを追加してください', true); return; }
-                const linearResult = calculateMultiFarms(farms, date, 'linear');
-                const normalResult = calculateMultiFarms(farms, date, 'normal');
-                setResultLinear(linearResult);
-                setResultNormal(normalResult);
-                const month = new Date(date + 'T00:00:00').getMonth() + 1;
-                const record = {
-                    id: Date.now(),
-                    recordDate: new Date().toISOString(),
-                    incubationDate: date,
-                    farms: farms.map(farm => ({
-                        farmName: farm.farmName,
-                        parentAge: parseInt(farm.age),
-                        eggCount: parseInt(farm.eggs),
-                        storageDays: parseInt(farm.storageDays)
-                    })),
-                    environment: { month, season: getSeasonFromMonth(month) },
-                    predictions: {
-                        linear: { femaleChicks: linearResult.femaleChicks, totalChicks: linearResult.totalChicks, hatchRate: parseFloat(linearResult.hatchRate) },
-                        normal: { femaleChicks: normalResult.femaleChicks, totalChicks: normalResult.totalChicks, hatchRate: parseFloat(normalResult.hatchRate) }
-                    },
-                    actual: null
-                };
-                if (saveRecords([record, ...records])) setScreen('result');
-            };
-
-            const updateActualData = (recordId, actualData) => {
-                const updated = records.map(r => r.id === recordId ? {
-                    ...r,
-                    actual: {
-                        femaleChicks: parseInt(actualData.femaleChicks) || null,
-                        totalChicks: parseInt(actualData.totalChicks) || null,
-                        recordedDate: new Date().toISOString()
-                    }
-                } : r);
-                if (saveRecords(updated)) showToast('実績データを保存しました');
-            };
-
-            const deleteRecord = (recordId) => {
-                showConfirm('この記録を削除しますか？', () => {
-                    const updated = records.filter(r => r.id !== recordId);
-                    if (saveRecords(updated)) showToast('記録を削除しました');
-                });
-            };
-
-            const reset = () => {
-                setScreen('date-select');
-                setDate(new Date().toISOString().split('T')[0]);
-                setFarms([]);
-                setEditingFarm(null);
-                setIsEditing(false);
-                setResultLinear(null);
-                setResultNormal(null);
-                setActiveMethod('linear');
-                setErrors({});
-            };
-
-            // CSV エクスポート
-            const exportCSV = () => {
-                if (records.length === 0) { showAlert('エクスポートする記録がありません'); return; }
-                const header = ['入卵日','農場数','総入卵数','メス鶏数(区分線形)','総孵化数(区分線形)','孵化率(区分線形)%','メス鶏数(正規分布)','総孵化数(正規分布)','孵化率(正規分布)%','実績メス鶏数','実績総孵化数','登録日時'];
-                const rows = records.map(r => [
-                    r.incubationDate, r.farms.length,
-                    r.farms.reduce((s, f) => s + f.eggCount, 0),
-                    r.predictions.linear.femaleChicks, r.predictions.linear.totalChicks, r.predictions.linear.hatchRate,
-                    r.predictions.normal.femaleChicks, r.predictions.normal.totalChicks, r.predictions.normal.hatchRate,
-                    r.actual?.femaleChicks || '', r.actual?.totalChicks || '',
-                    new Date(r.recordDate).toLocaleString('ja-JP')
-                ]);
-                const csv = '\uFEFF' + [header, ...rows].map(row => row.join(',')).join('\n');
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-                a.download = `孵化記録_${new Date().toISOString().split('T')[0]}.csv`;
-                a.click();
-                showToast('CSVをダウンロードしました');
-            };
-
-            // JSON バックアップ
-            const exportJSON = () => {
-                if (records.length === 0) { showAlert('エクスポートする記録がありません'); return; }
-                const data = { version: 'v3', exportDate: new Date().toISOString(), records };
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
-                a.download = `孵化記録バックアップ_${new Date().toISOString().split('T')[0]}.json`;
-                a.click();
-                showToast('バックアップを保存しました');
-            };
-
-            // JSON インポート
-            const importJSON = (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = (ev) => {
-                    try {
-                        const data = JSON.parse(ev.target.result);
-                        const importedRecords = (data.version === 'v3' && Array.isArray(data.records))
-                            ? data.records
-                            : Array.isArray(data) ? data : null;
-                        if (!importedRecords) throw new Error('Invalid format');
-                        showConfirm(
-                            `${importedRecords.length}件の記録をインポートします。\n現在の記録と統合されます。よろしいですか？`,
-                            () => {
-                                const existingIds = new Set(records.map(r => r.id));
-                                const merged = [...importedRecords, ...records.filter(r => !existingIds.has(r.id))];
-                                merged.sort((a, b) => new Date(b.recordDate) - new Date(a.recordDate));
-                                if (saveRecords(merged)) showToast(`${importedRecords.length}件をインポートしました`);
-                            },
-                            'インポート'
-                        );
-                    } catch {
-                        showAlert('ファイルの読み込みに失敗しました。バックアップファイルを確認してください。', true);
-                    }
-                };
-                reader.readAsText(file);
-                e.target.value = '';
-            };
-
-            const totalEggs = farms.reduce((sum, f) => sum + parseInt(f.eggs || 0), 0);
-            const weightedStorage = farms.reduce((sum, f) => sum + parseInt(f.eggs || 0) * parseInt(f.storageDays || 0), 0);
-            const avgStorage = totalEggs > 0 ? (weightedStorage / totalEggs).toFixed(1) : '0.0';
-
-            const GlobalUI = () => (
-                <>
-                    <Modal config={modalConfig} onClose={() => setModalConfig(null)} />
-                    {toast && <Toast message={toast} onHide={() => setToast(null)} />}
-                </>
-            );
-
-            // ===== 画面1: 日付選択 =====
-            if (screen === 'date-select') return (
-                <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-                    <GlobalUI />
-                    <header className="bg-white shadow-sm">
-                        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-4">
-                            <h1 className="text-xl sm:text-2xl font-bold text-gray-800">🐣 孵化率予測システム</h1>
-                            <p className="text-xs sm:text-sm text-gray-600 mt-1">カジワラファーム</p>
-                        </div>
-                    </header>
-                    <main className="max-w-2xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
-                        <div className="bg-white rounded-2xl shadow-xl p-6 sm:p-12 text-center">
-                            <div className="w-16 h-16 sm:w-20 sm:h-20 mx-auto mb-4 sm:mb-6 text-blue-600 flex items-center justify-center">
-                                <Calendar />
-                            </div>
-                            <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-6 sm:mb-8">入卵日を選択</h2>
-                            <input
-                                type="date"
-                                value={date}
-                                onChange={(e) => setDate(e.target.value)}
-                                className="w-full px-4 sm:px-8 py-4 sm:py-6 text-xl sm:text-3xl text-center border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors mb-5 sm:mb-8"
-                            />
-                            <button
-                                onClick={() => setScreen('farm-input')}
-                                className="w-full py-5 sm:py-6 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xl sm:text-2xl font-bold rounded-xl shadow-lg active:shadow-md active:translate-y-0.5 transition-all flex items-center justify-center gap-2"
-                            >
-                                農場データ入力へ進む <ChevronRight />
-                            </button>
-                            <button
-                                onClick={() => setScreen('history')}
-                                className="w-full mt-4 py-4 bg-gray-100 active:bg-gray-200 text-gray-700 text-base sm:text-lg font-medium rounded-xl transition-colors flex items-center justify-center gap-2"
-                            >
-                                <History /> 過去の記録を見る
-                            </button>
-                        </div>
-                    </main>
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 pb-10">
+            <header className="bg-white shadow-sm sticky top-0 z-10">
+                <div className="max-w-2xl mx-auto px-4 sm:px-6 py-4 flex justify-between items-center">
+                    <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">⚙️ 管理画面</h1>
+                    <button onClick={() => setScreen('top')} className="px-5 py-3 bg-gray-100 active:bg-gray-200 text-gray-700 rounded-xl text-lg font-medium">
+                        ← 戻る
+                    </button>
                 </div>
-            );
+            </header>
+            <main className="max-w-2xl mx-auto px-4 sm:px-6 pt-5 space-y-6">
 
-            // ===== 画面2: 農場入力 =====
-            if (screen === 'farm-input') return (
-                <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-                    <GlobalUI />
-                    <header className="bg-white shadow-sm sticky top-0 z-10">
-                        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-3 flex justify-between items-center">
-                            <div>
-                                <h1 className="text-base sm:text-xl font-bold text-gray-800">🐣 農場データ入力</h1>
-                                <p className="text-xs sm:text-sm text-gray-600">{formatDate(date)}の入卵</p>
+                {/* 計算モデル選択 */}
+                <section>
+                    <h2 className="text-xl sm:text-2xl font-bold text-gray-700 mb-3">使用する計算モデルを選択</h2>
+                    <div className="space-y-4">
+                        {MODELS.map(model => (
+                            <button key={model.key}
+                                onClick={() => setCalcModel(model.key)}
+                                className={`w-full text-left rounded-2xl p-5 sm:p-6 border-2 transition-all ${calcModel === model.key ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white'}`}>
+                                <div className="flex justify-between items-start mb-3">
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-3xl">{model.icon}</span>
+                                        <span className="font-bold text-xl sm:text-2xl text-gray-800">{model.name}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <span className={`text-sm px-3 py-1 rounded-full font-medium ${model.badge === '推奨' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                            {model.badge}
+                                        </span>
+                                        <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center ${calcModel === model.key ? 'border-blue-600 bg-blue-600' : 'border-gray-300 bg-white'}`}>
+                                            {calcModel === model.key && <span className="text-white font-bold text-sm">✓</span>}
+                                        </div>
+                                    </div>
+                                </div>
+                                <p className="text-lg text-gray-600 mb-4 leading-relaxed">{model.summary}</p>
+                                <div className="bg-white rounded-xl p-4 space-y-2">
+                                    <p className="text-base font-semibold text-gray-500 mb-2">日齢別の孵化率の目安</p>
+                                    {model.rows.map((row, i) => (
+                                        <div key={i} className="flex flex-wrap gap-x-3 gap-y-0.5 py-1.5 border-b border-gray-100 last:border-0">
+                                            <span className="text-base text-gray-500 w-32 shrink-0">{row.range}</span>
+                                            <span className="text-base font-bold text-blue-600 w-28 shrink-0">{row.rate}</span>
+                                            <span className="text-base text-gray-400">{row.note}</span>
+                                        </div>
+                                    ))}
+                                    {model.formula && (
+                                        <div className="mt-3 p-3 bg-gray-50 rounded-xl">
+                                            <p className="text-sm text-gray-400 font-mono leading-relaxed whitespace-pre-line">{model.formula}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </button>
+                        ))}
+                    </div>
+                </section>
+
+                {/* 補正係数 */}
+                <section>
+                    <h2 className="text-xl sm:text-2xl font-bold text-gray-700 mb-3">補正係数（両モデル共通）</h2>
+                    <div className="space-y-4">
+                        {CORRECTIONS.map((corr, ci) => (
+                            <div key={ci} className="bg-white rounded-2xl p-5 sm:p-6 border border-gray-100">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <span className="text-3xl">{corr.icon}</span>
+                                    <h3 className="font-bold text-xl text-gray-700">{corr.title}</h3>
+                                </div>
+                                <div className="space-y-2">
+                                    {corr.items.map((item, i) => (
+                                        <div key={i} className="flex justify-between items-center py-2.5 border-b border-gray-50 last:border-0">
+                                            <span className="text-base text-gray-700">{item.label}</span>
+                                            <span className={`text-base font-bold ml-4 shrink-0 ${item.good ? 'text-green-600' : 'text-orange-500'}`}>{item.value}</span>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
-                            <button
-                                onClick={() => { setScreen('date-select'); setFarms([]); setEditingFarm(null); }}
-                                className="px-3 py-2 bg-gray-100 active:bg-gray-200 text-gray-700 rounded-lg text-sm"
-                            >← 戻る</button>
-                        </div>
-                    </header>
-                    <main className="max-w-2xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
-                        {editingFarm && (
-                            <div className="bg-white rounded-xl shadow-xl p-5 sm:p-8 mb-4 sm:mb-6">
-                                <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-5">
-                                    {isEditing ? '農場データを編集' : '新しい農場データを追加'}
+                        ))}
+                    </div>
+                </section>
+
+                {/* メス鶏率 */}
+                <div className="bg-white rounded-2xl p-5 sm:p-6 border border-gray-100">
+                    <div className="flex items-center gap-3 mb-3">
+                        <span className="text-3xl">🐔</span>
+                        <h3 className="font-bold text-xl text-gray-700">メス鶏率</h3>
+                    </div>
+                    <p className="text-lg text-gray-600 leading-relaxed">
+                        総孵化数のうち <strong className="text-blue-600 text-2xl">61%</strong> をメス鶏として計算します（オス39%）。
+                    </p>
+                </div>
+
+                <div className="pb-4 text-center">
+                    <button onClick={() => setScreen('top')}
+                        className="w-full py-5 bg-blue-600 active:bg-blue-700 text-white text-xl font-bold rounded-2xl shadow-md">
+                        設定を保存してトップへ戻る
+                    </button>
+                </div>
+            </main>
+        </div>
+    );
+}
+
+// ===== 計算画面 =====
+function CalculationScreen({ setScreen, addRecord, showAlert, showToast, calcModel }) {
+    const today = new Date().toISOString().split('T')[0];
+    const [date, setDate] = useState(today);
+    const [farms, setFarms] = useState([newFarm()]);
+
+    function newFarm() {
+        return { id: Date.now() + Math.random(), farmName: '', age: '', eggs: '', storageDays: '7' };
+    }
+
+    const month = getMonth(date);
+    const farmResults = useMemo(() => farms.map(f => calcOneFarm(f.age, f.eggs, f.storageDays, month)), [farms, month]);
+    const totalEggs = useMemo(() => farms.reduce((s, f) => s + (parseInt(f.eggs) || 0), 0), [farms]);
+    const totalResult = useMemo(() => calcTotals(farmResults, totalEggs), [farmResults, totalEggs]);
+
+    const setFarm = (id, key, val) => setFarms(prev => prev.map(f => f.id === id ? { ...f, [key]: val } : f));
+    const removeFarm = (id) => { if (farms.length > 1) setFarms(prev => prev.filter(f => f.id !== id)); };
+
+    const saveToRecords = () => {
+        const valid = farms.filter(f => f.farmName.trim() && f.age && f.eggs);
+        if (valid.length === 0) { showAlert('農場名・日齢・入卵数を入力してください', true); return; }
+        const record = {
+            id: Date.now(),
+            recordDate: new Date().toISOString(),
+            incubationDate: date,
+            environment: { month, season: getSeason(month) },
+            farms: valid.map(f => {
+                const r = farmResults[farms.indexOf(f)];
+                return {
+                    id: f.id,
+                    farmName: f.farmName.trim(),
+                    parentAge: parseInt(f.age),
+                    eggCount: parseInt(f.eggs),
+                    storageDays: parseInt(f.storageDays) || 0,
+                    predictions: r || null,
+                    actual: { femaleChicks: null, totalChicks: null, recordedDate: null }
+                };
+            }),
+            totalPredictions: totalResult ? { linear: totalResult.linear, normal: totalResult.normal } : null
+        };
+        addRecord(record);
+    };
+
+    const FARM_OPTS = ['農場A', '農場B', '農場C', '農場D', '農場E'];
+    const AGE_PRESETS = [
+        { label: '170〜200日', value: 185 },
+        { label: '230〜250日', value: 240 },
+        { label: '260〜350日', value: 305 },
+        { label: '430日以上', value: 430 },
+    ];
+
+    const modelLabel = calcModel === 'normal' ? '非対称正規分布' : '区分線形';
+
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 pb-10">
+            <header className="bg-white shadow-sm sticky top-0 z-10">
+                <div className="max-w-2xl mx-auto px-4 sm:px-6 py-4 flex justify-between items-center">
+                    <div>
+                        <h1 className="text-xl sm:text-2xl font-bold text-gray-800">🧮 入卵数の計算</h1>
+                        <p className="text-base text-gray-500">入力内容が変わると予測が即座に更新されます</p>
+                    </div>
+                    <button onClick={() => setScreen('top')} className="px-4 py-3 bg-gray-100 active:bg-gray-200 text-gray-700 rounded-xl text-base font-medium">
+                        ← 戻る
+                    </button>
+                </div>
+            </header>
+
+            <main className="max-w-2xl mx-auto px-4 sm:px-6 pt-4 space-y-4">
+                {/* 入卵日 */}
+                <div className="bg-white rounded-xl shadow-sm p-5">
+                    <label className="block text-lg font-bold text-gray-700 mb-2">入卵日</label>
+                    <input type="date" value={date} onChange={e => setDate(e.target.value)}
+                        className="w-full px-4 py-4 text-xl border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors" />
+                </div>
+
+                {/* 農場カード */}
+                {farms.map((farm, idx) => {
+                    const result = farmResults[idx];
+                    const primaryResult = result ? (calcModel === 'normal' ? result.normal : result.linear) : null;
+                    const isPreset = FARM_OPTS.includes(farm.farmName);
+                    return (
+                        <div key={farm.id} className="bg-white rounded-xl shadow-sm p-5 sm:p-6 fade-in">
+                            <div className="flex justify-between items-center mb-5">
+                                <h3 className="font-bold text-gray-800 text-xl sm:text-2xl">
+                                    {farm.farmName || `農場 ${idx + 1}`}
                                 </h3>
-                                <div className="space-y-5">
-                                    {/* 農場選択 */}
-                                    <div>
-                                        <label className="block text-gray-700 font-medium mb-2">農場を選択</label>
-                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                            {farmOptions.map(opt => (
-                                                <button key={opt}
-                                                    onClick={() => { setEditingFarm({...editingFarm, farmName: opt}); setErrors({...errors, farmName: null}); }}
-                                                    className={`py-3 sm:py-4 px-3 rounded-xl font-medium text-base sm:text-lg transition-all ${editingFarm.farmName === opt ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-100 text-gray-700 active:bg-gray-200'}`}
-                                                >{opt}</button>
-                                            ))}
-                                        </div>
-                                        {errors.farmName && <p className="text-red-600 text-sm mt-2 flex items-center gap-1"><AlertCircle />{errors.farmName}</p>}
-                                        {editingFarm.farmName === 'その他' && (
-                                            <input type="text" value={editingFarm.customFarmName || ''}
-                                                onChange={(e) => setEditingFarm({...editingFarm, customFarmName: e.target.value})}
-                                                placeholder="農場名を入力"
-                                                className="w-full mt-3 px-4 py-3 text-lg border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
-                                            />
-                                        )}
-                                    </div>
-                                    {/* 親鳥日齢 */}
-                                    <div>
-                                        <label className="block text-gray-700 font-medium mb-2">親鳥日齢を選択</label>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            {ageButtons.map(btn => (
-                                                <button key={btn.value}
-                                                    onClick={() => { setEditingFarm({...editingFarm, age: btn.value}); setErrors({...errors, age: null}); }}
-                                                    className={`py-4 sm:py-5 px-3 rounded-xl font-medium text-base sm:text-lg transition-all ${editingFarm.age === btn.value ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-100 text-gray-700 active:bg-gray-200'}`}
-                                                >{btn.label}</button>
-                                            ))}
-                                        </div>
-                                        {errors.age && <p className="text-red-600 text-sm mt-2 flex items-center gap-1"><AlertCircle />{errors.age}</p>}
-                                    </div>
-                                    {/* 入卵数 */}
-                                    <div>
-                                        <label className="block text-gray-700 font-medium mb-2">入卵数（個）</label>
-                                        <input type="number" value={editingFarm.eggs}
-                                            onChange={(e) => { setEditingFarm({...editingFarm, eggs: e.target.value}); setErrors({...errors, eggs: null}); }}
-                                            placeholder="例: 10000" inputMode="numeric" min="1" max="999999"
-                                            className={`w-full px-4 sm:px-6 py-4 sm:py-5 text-xl sm:text-2xl border-2 rounded-xl focus:outline-none transition-colors ${errors.eggs ? 'border-red-400' : 'border-gray-200 focus:border-blue-500'}`}
-                                        />
-                                        {errors.eggs && <p className="text-red-600 text-sm mt-2 flex items-center gap-1"><AlertCircle />{errors.eggs}</p>}
-                                    </div>
-                                    {/* 貯卵日数 */}
-                                    <div>
-                                        <label className="block text-gray-700 font-medium mb-2">貯卵日数（日）</label>
-                                        <input type="number" value={editingFarm.storageDays}
-                                            onChange={(e) => { setEditingFarm({...editingFarm, storageDays: e.target.value}); setErrors({...errors, storageDays: null}); }}
-                                            placeholder="例: 7" inputMode="numeric" min="0" max="30"
-                                            className={`w-full px-4 sm:px-6 py-4 sm:py-5 text-xl sm:text-2xl border-2 rounded-xl focus:outline-none transition-colors ${errors.storageDays ? 'border-red-400' : 'border-gray-200 focus:border-blue-500'}`}
-                                        />
-                                        {errors.storageDays && <p className="text-red-600 text-sm mt-2 flex items-center gap-1"><AlertCircle />{errors.storageDays}</p>}
-                                    </div>
-                                </div>
-                                <div className="flex gap-3 mt-6">
-                                    <button onClick={saveFarm} className="flex-1 py-4 bg-blue-600 active:bg-blue-700 text-white text-lg font-bold rounded-xl transition-colors flex items-center justify-center gap-2">
-                                        <Save /> {isEditing ? '更新' : '保存'}
+                                {farms.length > 1 && (
+                                    <button onClick={() => removeFarm(farm.id)}
+                                        className="text-red-400 active:text-red-600 text-base px-3 py-1.5 rounded-lg active:bg-red-50">
+                                        × 削除
                                     </button>
-                                    <button onClick={() => { setEditingFarm(null); setIsEditing(false); setErrors({}); }} className="px-5 py-4 bg-gray-100 active:bg-gray-200 text-gray-700 text-lg font-medium rounded-xl flex items-center gap-2">
-                                        <X /> キャンセル
-                                    </button>
-                                </div>
+                                )}
                             </div>
-                        )}
 
-                        {farms.length > 0 && (
-                            <>
-                                <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 mb-4">
-                                    <h3 className="text-base sm:text-lg font-semibold text-gray-800 mb-3">登録済み農場（{farms.length}件）</h3>
-                                    <div className="space-y-3">
-                                        {farms.map(farm => (
-                                            <div key={farm.id} className="bg-gray-50 rounded-lg p-3 sm:p-4">
-                                                <div className="flex justify-between items-center gap-2">
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="font-medium text-gray-800 text-base sm:text-lg truncate">{farm.farmName}</p>
-                                                        <p className="text-xs sm:text-sm text-gray-600 mt-1">
-                                                            {farm.age}日齢 / {parseInt(farm.eggs).toLocaleString()}個 / 貯卵{farm.storageDays}日
-                                                        </p>
-                                                    </div>
-                                                    <div className="flex gap-2 shrink-0">
-                                                        <button onClick={() => editFarm(farm)} className="px-3 py-2 bg-blue-100 active:bg-blue-200 text-blue-700 rounded-lg flex items-center gap-1 text-sm">
-                                                            <Edit2 /> 編集
-                                                        </button>
-                                                        <button onClick={() => deleteFarm(farm.id)} className="px-3 py-2 bg-red-100 active:bg-red-200 text-red-700 rounded-lg flex items-center gap-1 text-sm">
-                                                            <Trash2 /> 削除
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                                <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 mb-4">
-                                    <h3 className="text-base sm:text-lg font-semibold text-gray-800 mb-3">合計・平均</h3>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div className="bg-blue-50 rounded-lg p-3 sm:p-4 text-center">
-                                            <p className="text-xs sm:text-sm text-gray-600 mb-1">総入卵数</p>
-                                            <p className="text-2xl sm:text-3xl font-bold text-blue-600">{totalEggs.toLocaleString()}</p>
-                                            <p className="text-xs sm:text-sm text-gray-500">個</p>
-                                        </div>
-                                        <div className="bg-indigo-50 rounded-lg p-3 sm:p-4 text-center">
-                                            <p className="text-xs sm:text-sm text-gray-600 mb-1">平均貯卵日数</p>
-                                            <p className="text-2xl sm:text-3xl font-bold text-indigo-600">{avgStorage}</p>
-                                            <p className="text-xs sm:text-sm text-gray-500">日</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </>
-                        )}
-
-                        {!editingFarm && (
-                            <button onClick={addFarm} className="w-full py-5 bg-white border-2 border-dashed border-gray-300 active:border-blue-500 active:bg-blue-50 text-gray-600 active:text-blue-600 text-lg sm:text-xl font-medium rounded-xl transition-all mb-4 flex items-center justify-center gap-2">
-                                <Plus /> 農場を追加
-                            </button>
-                        )}
-
-                        {farms.length > 0 && !editingFarm && (
-                            <button onClick={calculate} className="w-full py-5 sm:py-6 bg-gradient-to-r from-green-600 to-emerald-600 text-white text-xl sm:text-2xl font-bold rounded-xl shadow-lg active:shadow-md active:translate-y-0.5 transition-all">
-                                予測計算を実行（両方式で比較） →
-                            </button>
-                        )}
-                    </main>
-                </div>
-            );
-
-            // ===== 画面3: 結果 =====
-            if (screen === 'result') {
-                const activeResult = activeMethod === 'linear' ? resultLinear : resultNormal;
-                const diff = {
-                    femaleChicks: resultLinear.femaleChicks - resultNormal.femaleChicks,
-                    totalChicks: resultLinear.totalChicks - resultNormal.totalChicks,
-                    hatchRate: (parseFloat(resultLinear.hatchRate) - parseFloat(resultNormal.hatchRate)).toFixed(1)
-                };
-                return (
-                    <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100">
-                        <GlobalUI />
-                        <header className="bg-white shadow-sm no-print">
-                            <div className="max-w-2xl mx-auto px-4 sm:px-6 py-3">
-                                <h1 className="text-base sm:text-xl font-bold text-gray-800">🐣 予測結果（両方式比較）</h1>
-                                <p className="text-xs sm:text-sm text-gray-600">{formatDate(date)}</p>
-                            </div>
-                        </header>
-                        <main className="max-w-2xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
-                            {/* 方式切り替え */}
-                            <div className="bg-white rounded-2xl shadow-lg p-4 sm:p-6 mb-4 no-print">
-                                <div className="flex items-center gap-2 mb-3">
-                                    <TrendingUp />
-                                    <h3 className="text-base sm:text-lg font-semibold text-gray-800">予測方式を切り替え</h3>
-                                </div>
-                                <div className="flex gap-3">
-                                    {[{key:'linear',label:'区分線形',sub:'実用的・経験ベース'},{key:'normal',label:'非対称正規分布',sub:'滑らかな変化'}].map(m => (
-                                        <button key={m.key} onClick={() => setActiveMethod(m.key)}
-                                            className={`flex-1 py-3 sm:py-4 px-3 rounded-xl font-medium text-sm sm:text-base transition-all ${activeMethod === m.key ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-100 text-gray-700'}`}>
-                                            {m.label}
-                                            <span className="block text-xs opacity-80 mt-0.5">{m.sub}</span>
+                            {/* 農場名 */}
+                            <div className="mb-5">
+                                <p className="text-lg font-bold text-gray-700 mb-2">農場名</p>
+                                <div className="flex flex-wrap gap-2 mb-3">
+                                    {FARM_OPTS.map(opt => (
+                                        <button key={opt} onClick={() => setFarm(farm.id, 'farmName', opt)}
+                                            className={`px-5 py-3 rounded-xl text-lg font-medium transition-colors ${farm.farmName === opt ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-100 text-gray-700 active:bg-blue-50'}`}>
+                                            {opt}
                                         </button>
                                     ))}
                                 </div>
+                                <input type="text"
+                                    value={isPreset ? '' : farm.farmName}
+                                    onChange={e => setFarm(farm.id, 'farmName', e.target.value)}
+                                    placeholder="その他の農場名を直接入力"
+                                    className={`w-full px-4 py-3 text-lg border-2 rounded-xl focus:outline-none transition-colors ${!isPreset && farm.farmName ? 'border-blue-500 bg-blue-50' : 'border-gray-200 focus:border-blue-400'}`} />
                             </div>
-                            {/* メイン結果 */}
-                            <div className="bg-white rounded-2xl shadow-xl p-5 sm:p-8 mb-4">
-                                <div className="flex justify-between items-center mb-4">
-                                    <h2 className="text-sm sm:text-lg font-semibold text-gray-700">予測メス鶏数</h2>
-                                    <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full font-medium">
-                                        {activeMethod === 'linear' ? '区分線形' : '非対称正規分布'}
-                                    </span>
-                                </div>
-                                <div className="text-center mb-6">
-                                    <div className="text-5xl sm:text-7xl font-bold text-green-600 mb-1">
-                                        {activeResult.femaleChicks.toLocaleString()}
-                                    </div>
-                                    <div className="text-xl sm:text-3xl text-gray-600">羽</div>
-                                </div>
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div className="bg-blue-50 rounded-xl p-3 sm:p-5 text-center">
-                                        <p className="text-xs sm:text-sm text-gray-600 mb-1">総孵化予測</p>
-                                        <p className="text-2xl sm:text-4xl font-bold text-blue-600">{activeResult.totalChicks.toLocaleString()}</p>
-                                        <p className="text-xs sm:text-sm text-gray-500">羽</p>
-                                    </div>
-                                    <div className="bg-indigo-50 rounded-xl p-3 sm:p-5 text-center">
-                                        <p className="text-xs sm:text-sm text-gray-600 mb-1">総合孵化率</p>
-                                        <p className="text-2xl sm:text-4xl font-bold text-indigo-600">{activeResult.hatchRate}</p>
-                                        <p className="text-xs sm:text-sm text-gray-500">%</p>
-                                    </div>
-                                </div>
-                            </div>
-                            {/* 比較テーブル */}
-                            <div className="bg-white rounded-2xl shadow-lg p-4 sm:p-6 mb-4">
-                                <div className="flex items-center gap-2 mb-3">
-                                    <BarChart3 />
-                                    <h3 className="text-base sm:text-lg font-semibold text-gray-800">両方式の比較</h3>
-                                </div>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-sm sm:text-base">
-                                        <thead>
-                                            <tr className="border-b-2 border-gray-200">
-                                                <th className="py-2 px-2 sm:px-4 text-left text-gray-600 font-medium"></th>
-                                                <th className="py-2 px-2 sm:px-4 text-center text-blue-700 font-semibold">区分線形</th>
-                                                <th className="py-2 px-2 sm:px-4 text-center text-purple-700 font-semibold">正規分布</th>
-                                                <th className="py-2 px-2 sm:px-4 text-center text-gray-700 font-semibold">差分</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {[
-                                                { label:'メス鶏数', lin:resultLinear.femaleChicks.toLocaleString(), nor:resultNormal.femaleChicks.toLocaleString(), d:diff.femaleChicks, unit:'羽' },
-                                                { label:'総孵化数', lin:resultLinear.totalChicks.toLocaleString(), nor:resultNormal.totalChicks.toLocaleString(), d:diff.totalChicks, unit:'羽' },
-                                                { label:'孵化率', lin:resultLinear.hatchRate+'%', nor:resultNormal.hatchRate+'%', d:parseFloat(diff.hatchRate), unit:'%' }
-                                            ].map((row, i) => (
-                                                <tr key={i} className={i < 2 ? 'border-b border-gray-100' : ''}>
-                                                    <td className="py-3 px-2 sm:px-4 font-medium text-gray-700">{row.label}</td>
-                                                    <td className="py-3 px-2 sm:px-4 text-center font-bold text-blue-600">{row.lin}</td>
-                                                    <td className="py-3 px-2 sm:px-4 text-center font-bold text-purple-600">{row.nor}</td>
-                                                    <td className={`py-3 px-2 sm:px-4 text-center font-semibold ${row.d > 0 ? 'text-green-600' : row.d < 0 ? 'text-red-600' : 'text-gray-600'}`}>
-                                                        {row.d > 0 ? '+' : ''}{row.d}{row.unit}
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                                <div className="mt-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
-                                    <p className="text-xs sm:text-sm text-amber-800">
-                                        <strong>💡 ヒント:</strong> 実績データが蓄積されたら、どちらの予測式が実態に近いか分析できます。現時点では区分線形（お母様の経験ベース）の使用を推奨します。
-                                    </p>
-                                </div>
-                            </div>
-                            {/* 入卵詳細 */}
-                            <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 mb-4">
-                                <h3 className="text-base sm:text-lg font-semibold text-gray-800 mb-3">入卵詳細</h3>
-                                <div className="space-y-2 text-sm sm:text-base">
-                                    {[
-                                        ['総入卵数', activeResult.totalEggs.toLocaleString() + '個'],
-                                        ['平均貯卵日数', activeResult.avgStorageDays + '日'],
-                                        ['農場数', farms.length + '箇所']
-                                    ].map(([k,v]) => (
-                                        <div key={k} className="flex justify-between py-2 border-b last:border-0">
-                                            <span className="text-gray-600">{k}</span>
-                                            <span className="font-semibold">{v}</span>
-                                        </div>
+
+                            {/* 親鳥日齢 */}
+                            <div className="mb-5">
+                                <p className="text-lg font-bold text-gray-700 mb-2">親鳥日齢</p>
+                                <div className="flex flex-wrap gap-2 mb-3">
+                                    {AGE_PRESETS.map(p => (
+                                        <button key={p.value} onClick={() => setFarm(farm.id, 'age', String(p.value))}
+                                            className={`px-4 py-3 rounded-xl text-lg font-medium transition-colors ${parseInt(farm.age) === p.value ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-100 text-gray-700 active:bg-blue-50'}`}>
+                                            {p.label}
+                                        </button>
                                     ))}
                                 </div>
+                                <input type="number" value={farm.age}
+                                    onChange={e => setFarm(farm.id, 'age', e.target.value)}
+                                    placeholder="日齢を直接入力（例：240）"
+                                    inputMode="numeric" min="1" max="900"
+                                    className="w-full px-4 py-4 text-xl border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors" />
                             </div>
-                            {/* アクション */}
-                            <div className="flex gap-2 sm:gap-3 no-print">
-                                <button onClick={reset} className="flex-1 py-5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-base sm:text-xl font-bold rounded-xl shadow-lg active:shadow-md active:translate-y-0.5 transition-all">
-                                    新しい記録を作成
-                                </button>
-                                <button onClick={() => window.print()} className="px-4 py-5 bg-gray-100 active:bg-gray-200 text-gray-700 font-medium rounded-xl flex items-center gap-1 text-sm">
-                                    <Printer /> 印刷
-                                </button>
-                                <button onClick={() => setScreen('history')} className="px-4 py-5 bg-gray-100 active:bg-gray-200 text-gray-700 text-sm font-medium rounded-xl">
-                                    記録一覧
-                                </button>
-                            </div>
-                        </main>
-                    </div>
-                );
-            }
 
-            // ===== 画面4: 履歴 =====
-            return (
-                <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-100">
-                    <GlobalUI />
-                    <header className="bg-white shadow-sm sticky top-0 z-10">
-                        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-3 flex justify-between items-center">
-                            <h1 className="text-lg sm:text-2xl font-bold text-gray-800">📋 過去の入卵記録</h1>
-                            <button onClick={reset} className="px-3 py-2 bg-gray-100 active:bg-gray-200 text-gray-700 rounded-lg text-sm">
-                                ← 戻る
-                            </button>
-                        </div>
-                    </header>
-                    <main className="max-w-2xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
-                        {/* データ管理 */}
-                        <div className="bg-white rounded-xl shadow-lg p-4 sm:p-5 mb-4">
-                            <h3 className="text-sm font-semibold text-gray-700 mb-3">データ管理</h3>
-                            <div className="grid grid-cols-3 gap-2">
-                                <button onClick={exportCSV} className="flex items-center justify-center gap-1 py-3 px-2 bg-green-100 active:bg-green-200 text-green-700 rounded-xl font-medium text-xs sm:text-sm">
-                                    <Download /> CSV出力
-                                </button>
-                                <button onClick={exportJSON} className="flex items-center justify-center gap-1 py-3 px-2 bg-blue-100 active:bg-blue-200 text-blue-700 rounded-xl font-medium text-xs sm:text-sm">
-                                    <Download /> バックアップ
-                                </button>
-                                <label className="flex items-center justify-center gap-1 py-3 px-2 bg-purple-100 active:bg-purple-200 text-purple-700 rounded-xl font-medium text-xs sm:text-sm cursor-pointer">
-                                    <Upload /> 復元
-                                    <input type="file" accept=".json" onChange={importJSON} className="hidden" />
-                                </label>
+                            {/* 入卵数・貯卵日数（ラベル常時表示） */}
+                            <div className="grid grid-cols-2 gap-4 mb-5">
+                                <div>
+                                    <p className="text-lg font-bold text-gray-700 mb-2">入卵数</p>
+                                    <input type="number" value={farm.eggs}
+                                        onChange={e => setFarm(farm.id, 'eggs', e.target.value)}
+                                        placeholder="例：10000"
+                                        inputMode="numeric" min="1" max="999999"
+                                        className="w-full px-4 py-4 text-xl border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors" />
+                                    <p className="text-base text-gray-400 mt-1 ml-1">個</p>
+                                </div>
+                                <div>
+                                    <p className="text-lg font-bold text-gray-700 mb-2">貯卵日数</p>
+                                    <input type="number" value={farm.storageDays}
+                                        onChange={e => setFarm(farm.id, 'storageDays', e.target.value)}
+                                        placeholder="例：7"
+                                        inputMode="numeric" min="0" max="30"
+                                        className="w-full px-4 py-4 text-xl border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors" />
+                                    <p className="text-base text-gray-400 mt-1 ml-1">日</p>
+                                </div>
                             </div>
-                            <p className="text-xs text-gray-500 mt-2">※ 定期的にバックアップを取ることをおすすめします</p>
-                        </div>
 
-                        {records.length === 0 ? (
-                            <div className="bg-white rounded-xl shadow-lg p-10 text-center">
-                                <div className="text-5xl mb-4">📭</div>
-                                <p className="text-lg text-gray-600">まだ記録がありません</p>
-                            </div>
-                        ) : (
-                            <div className="space-y-4">
-                                {records.map(record => (
-                                    <div key={record.id} className="bg-white rounded-xl shadow-lg p-4 sm:p-6">
-                                        <div className="flex justify-between items-start mb-3">
-                                            <div className="flex-1 min-w-0">
-                                                <h3 className="text-base sm:text-xl font-bold text-gray-800">
-                                                    {formatDate(record.incubationDate)}
-                                                </h3>
-                                                <p className="text-xs sm:text-sm text-gray-600 mt-1">
-                                                    {record.farms.length}農場 / {record.farms.reduce((s,f)=>s+f.eggCount,0).toLocaleString()}個入卵
-                                                </p>
-                                                <p className="text-xs text-gray-500">農場: {record.farms.map(f=>f.farmName).join(', ')}</p>
-                                            </div>
-                                            <div className="text-right ml-2 shrink-0">
-                                                <p className="text-xs text-gray-600">予測メス鶏数</p>
-                                                <p className="text-2xl sm:text-3xl font-bold text-blue-600">
-                                                    {record.predictions.linear.femaleChicks.toLocaleString()}
-                                                </p>
-                                                <p className="text-xs text-gray-500">羽</p>
-                                            </div>
+                            {/* 農場別即時予測 */}
+                            {primaryResult ? (
+                                <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 sm:p-5">
+                                    <p className="text-base text-blue-600 font-bold mb-3">この農場の予測（{modelLabel}）</p>
+                                    <div className="grid grid-cols-3 gap-3 text-center">
+                                        <div>
+                                            <p className="text-base text-gray-500 mb-1">メス鶏数</p>
+                                            <p className="text-3xl sm:text-4xl font-bold text-blue-600">{primaryResult.femaleChicks.toLocaleString()}</p>
+                                            <p className="text-base text-gray-400">羽</p>
                                         </div>
-                                        {/* 両方式比較 */}
-                                        <div className="bg-gray-50 rounded-lg p-3 mb-3">
-                                            <p className="text-xs font-medium text-gray-700 mb-2">予測比較</p>
-                                            <div className="grid grid-cols-2 gap-2">
-                                                <div className="bg-white rounded p-2">
-                                                    <p className="text-xs text-gray-600">区分線形</p>
-                                                    <p className="text-base font-bold text-blue-600">{record.predictions.linear.femaleChicks.toLocaleString()}羽</p>
-                                                </div>
-                                                <div className="bg-white rounded p-2">
-                                                    <p className="text-xs text-gray-600">非対称正規分布</p>
-                                                    <p className="text-base font-bold text-purple-600">{record.predictions.normal.femaleChicks.toLocaleString()}羽</p>
-                                                </div>
-                                            </div>
+                                        <div>
+                                            <p className="text-base text-gray-500 mb-1">総孵化数</p>
+                                            <p className="text-3xl sm:text-4xl font-bold text-blue-600">{primaryResult.totalChicks.toLocaleString()}</p>
+                                            <p className="text-base text-gray-400">羽</p>
                                         </div>
-                                        {/* 実績入力 */}
-                                        <div className="bg-gray-50 rounded-lg p-3">
-                                            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">実際の孵化羽数（後日入力）</label>
-                                            <div className="space-y-2">
-                                                <div className="flex gap-2">
-                                                    <input type="number" id={`actual-female-${record.id}`}
-                                                        defaultValue={record.actual?.femaleChicks || ''}
-                                                        placeholder="メス鶏数" inputMode="numeric"
-                                                        className="flex-1 px-3 py-3 text-base border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none"
-                                                    />
-                                                    <input type="number" id={`actual-total-${record.id}`}
-                                                        defaultValue={record.actual?.totalChicks || ''}
-                                                        placeholder="総孵化数" inputMode="numeric"
-                                                        className="flex-1 px-3 py-3 text-base border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none"
-                                                    />
-                                                </div>
-                                                <button onClick={() => {
-                                                    const f = document.getElementById(`actual-female-${record.id}`);
-                                                    const t = document.getElementById(`actual-total-${record.id}`);
-                                                    updateActualData(record.id, { femaleChicks: f.value, totalChicks: t.value });
-                                                }} className="w-full py-3 bg-blue-600 active:bg-blue-700 text-white font-medium rounded-lg text-sm">
-                                                    実績を保存
-                                                </button>
-                                            </div>
-                                            {record.actual?.femaleChicks && (
-                                                <div className="mt-3 pt-3 border-t border-gray-200">
-                                                    <p className="text-xs font-medium text-gray-700 mb-2">予測精度</p>
-                                                    <div className="grid grid-cols-2 gap-2">
-                                                        {[
-                                                            { label:'区分線形との差', pred:record.predictions.linear.femaleChicks, color:'text-blue-600' },
-                                                            { label:'正規分布との差', pred:record.predictions.normal.femaleChicks, color:'text-purple-600' }
-                                                        ].map((item, i) => {
-                                                            const diff = record.actual.femaleChicks - item.pred;
-                                                            const acc = (100 - Math.abs(diff / item.pred * 100)).toFixed(1);
-                                                            return (
-                                                                <div key={i} className="bg-white rounded p-2">
-                                                                    <p className="text-xs text-gray-600 mb-1">{item.label}</p>
-                                                                    <p className={`text-sm font-semibold ${diff >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                                                        {diff >= 0 ? '+' : ''}{diff.toLocaleString()}羽
-                                                                    </p>
-                                                                    <p className={`text-xs mt-1 ${item.color}`}>精度: {acc}%</p>
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                        {/* 削除ボタン */}
-                                        <div className="mt-3 flex justify-end">
-                                            <button onClick={() => deleteRecord(record.id)} className="text-xs text-gray-400 active:text-red-600 flex items-center gap-1 py-1 px-2">
-                                                <Trash2 /> この記録を削除
-                                            </button>
+                                        <div>
+                                            <p className="text-base text-gray-500 mb-1">孵化率</p>
+                                            <p className="text-3xl sm:text-4xl font-bold text-blue-600">{primaryResult.hatchRate}</p>
+                                            <p className="text-base text-gray-400">%</p>
                                         </div>
                                     </div>
-                                ))}
-                            </div>
-                        )}
-                    </main>
-                </div>
-            );
-        }
+                                </div>
+                            ) : (
+                                <div className="bg-gray-50 rounded-xl p-5 text-center text-lg text-gray-400">
+                                    農場名・日齢・入卵数を入力すると予測が表示されます
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<HatcheryApp />);
-    </script>
+                {/* 農場追加 */}
+                <button onClick={() => setFarms(prev => [...prev, newFarm()])}
+                    className="w-full py-5 bg-white border-2 border-dashed border-gray-300 active:border-blue-400 active:bg-blue-50 text-gray-500 active:text-blue-600 text-xl font-medium rounded-xl transition-all">
+                    ＋ 農場を追加
+                </button>
+
+                {/* 合計予測 */}
+                {totalResult ? (
+                    <div className="bg-gradient-to-r from-green-600 to-emerald-600 rounded-2xl shadow-xl p-6 sm:p-8 text-white">
+                        <div className="flex justify-between items-start mb-5">
+                            <div>
+                                <h3 className="text-xl sm:text-2xl font-bold">合計予測</h3>
+                                <p className="text-base opacity-70 mt-1">
+                                    {farms.filter(f => f.farmName.trim() && f.age && f.eggs).length}農場 / 総入卵数 {totalResult.totalEggs.toLocaleString()}個
+                                </p>
+                            </div>
+                            <span className="text-sm bg-white bg-opacity-20 px-3 py-1 rounded-full">{modelLabel}</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-3 mb-6">
+                            {[
+                                { label: 'メス鶏数', val: (calcModel === 'normal' ? totalResult.normal : totalResult.linear).femaleChicks.toLocaleString(), unit: '羽' },
+                                { label: '総孵化数', val: (calcModel === 'normal' ? totalResult.normal : totalResult.linear).totalChicks.toLocaleString(), unit: '羽' },
+                                { label: '総孵化率', val: (calcModel === 'normal' ? totalResult.normal : totalResult.linear).hatchRate, unit: '%' },
+                            ].map(item => (
+                                <div key={item.label} className="bg-white bg-opacity-15 rounded-xl p-3 sm:p-4 text-center">
+                                    <p className="text-sm opacity-80 mb-1">{item.label}</p>
+                                    <p className="text-4xl sm:text-5xl font-bold">{item.val}</p>
+                                    <p className="text-base opacity-70 mt-0.5">{item.unit}</p>
+                                </div>
+                            ))}
+                        </div>
+                        <button onClick={saveToRecords}
+                            className="w-full py-5 bg-white text-green-700 font-bold text-xl rounded-xl active:bg-green-50 transition-colors shadow-sm">
+                            この結果を記録として保存する
+                        </button>
+                    </div>
+                ) : (
+                    <div className="bg-gray-100 rounded-2xl p-7 text-center text-lg text-gray-400">
+                        農場データを入力すると合計予測が表示されます
+                    </div>
+                )}
+            </main>
+        </div>
+    );
+}
+
+// ===== 孵化実績入力画面（カレンダーファースト） =====
+function HatchResultsScreen({ setScreen, records, updateRecord, showToast, calcModel }) {
+    const now = new Date();
+    const [calYear, setCalYear] = useState(now.getFullYear());
+    const [calMonth, setCalMonth] = useState(now.getMonth()); // 0-indexed
+    const [selectedDate, setSelectedDate] = useState(null);
+
+    const recordDates = useMemo(() => new Set(records.map(r => r.incubationDate)), [records]);
+    const selectedRecord = useMemo(() =>
+        selectedDate ? records.find(r => r.incubationDate === selectedDate) || null : null,
+        [selectedDate, records]
+    );
+
+    const prevMonth = () => { if (calMonth === 0) { setCalYear(y => y - 1); setCalMonth(11); } else setCalMonth(m => m - 1); };
+    const nextMonth = () => { if (calMonth === 11) { setCalYear(y => y + 1); setCalMonth(0); } else setCalMonth(m => m + 1); };
+
+    const calDays = useMemo(() => {
+        const first = new Date(calYear, calMonth, 1);
+        const last = new Date(calYear, calMonth + 1, 0);
+        const cells = [];
+        for (let i = 0; i < first.getDay(); i++) cells.push(null);
+        for (let d = 1; d <= last.getDate(); d++) {
+            const ds = `${calYear}-${padZ(calMonth + 1)}-${padZ(d)}`;
+            cells.push({ d, ds, has: recordDates.has(ds) });
+        }
+        return cells;
+    }, [calYear, calMonth, recordDates]);
+
+    const saveFarmActual = (recordId, farmId, femaleVal, totalVal) => {
+        updateRecord(recordId, r => ({
+            ...r,
+            farms: r.farms.map(f => f.id === farmId ? {
+                ...f,
+                actual: {
+                    femaleChicks: femaleVal === '' ? null : (parseInt(femaleVal) || null),
+                    totalChicks: totalVal === '' ? null : (parseInt(totalVal) || null),
+                    recordedDate: new Date().toISOString()
+                }
+            } : f)
+        }));
+        showToast('実績を保存しました');
+    };
+
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-100 pb-10">
+            <header className="bg-white shadow-sm sticky top-0 z-10">
+                <div className="max-w-2xl mx-auto px-4 sm:px-6 py-4 flex justify-between items-center">
+                    <h1 className="text-xl sm:text-2xl font-bold text-gray-800">🐣 孵化実績入力</h1>
+                    <button onClick={() => setScreen('top')} className="px-4 py-3 bg-gray-100 active:bg-gray-200 text-gray-700 rounded-xl text-base font-medium">
+                        ← 戻る
+                    </button>
+                </div>
+            </header>
+            <main className="max-w-2xl mx-auto px-4 sm:px-6 pt-4 space-y-4">
+
+                {/* カレンダー */}
+                <div className="bg-white rounded-2xl shadow-sm p-5 sm:p-6">
+                    <p className="text-lg text-gray-600 font-medium mb-4">入卵日を選んでください</p>
+
+                    {/* 月ナビ */}
+                    <div className="flex justify-between items-center mb-4">
+                        <button onClick={prevMonth}
+                            className="px-5 py-3 bg-gray-100 active:bg-gray-200 rounded-xl text-xl font-bold text-gray-700">
+                            ◀
+                        </button>
+                        <span className="text-2xl sm:text-3xl font-bold text-gray-800">
+                            {calYear}年{calMonth + 1}月
+                        </span>
+                        <button onClick={nextMonth}
+                            className="px-5 py-3 bg-gray-100 active:bg-gray-200 rounded-xl text-xl font-bold text-gray-700">
+                            ▶
+                        </button>
+                    </div>
+
+                    {/* 曜日ヘッダー */}
+                    <div className="grid grid-cols-7 mb-2">
+                        {['日', '月', '火', '水', '木', '金', '土'].map((d, i) => (
+                            <div key={d} className={`text-center text-lg font-bold py-1 ${i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-gray-500'}`}>
+                                {d}
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* 日付グリッド */}
+                    <div className="grid grid-cols-7 gap-1.5">
+                        {calDays.map((cell, i) => cell ? (
+                            <button key={i}
+                                onClick={() => cell.has && setSelectedDate(cell.ds)}
+                                className={`aspect-square rounded-xl flex items-center justify-center text-xl font-medium transition-all
+                                    ${cell.ds === selectedDate
+                                        ? 'bg-purple-600 text-white shadow-md scale-105'
+                                        : cell.has
+                                        ? 'bg-purple-100 text-purple-800 active:bg-purple-200 font-bold'
+                                        : 'text-gray-300 cursor-default'
+                                    }`}>
+                                {cell.d}
+                            </button>
+                        ) : <div key={i} />)}
+                    </div>
+
+                    {/* 凡例 */}
+                    <div className="flex items-center gap-5 mt-4 pt-3 border-t border-gray-100">
+                        <div className="flex items-center gap-2">
+                            <div className="w-5 h-5 rounded-md bg-purple-100"></div>
+                            <span className="text-base text-gray-500">入卵記録あり</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <div className="w-5 h-5 rounded-md bg-purple-600"></div>
+                            <span className="text-base text-gray-500">選択中</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* 日付未選択 */}
+                {!selectedDate && (
+                    <div className="bg-white rounded-2xl p-10 text-center">
+                        <p className="text-2xl text-gray-300 mb-2">☝️</p>
+                        <p className="text-xl text-gray-400">上のカレンダーから日付を選んでください</p>
+                        <p className="text-lg text-gray-300 mt-2">紫色の日付に入卵記録があります</p>
+                    </div>
+                )}
+
+                {/* 記録なし */}
+                {selectedDate && !selectedRecord && (
+                    <div className="bg-white rounded-2xl p-10 text-center">
+                        <p className="text-xl font-bold text-gray-700 mb-2">{fmtDate(selectedDate)}</p>
+                        <p className="text-lg text-gray-400">この日の入卵記録はありません</p>
+                    </div>
+                )}
+
+                {/* 農場別実績入力 */}
+                {selectedRecord && (
+                    <div className="space-y-4 fade-in">
+                        <div className="bg-white rounded-2xl p-5">
+                            <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-1">{fmtDate(selectedRecord.incubationDate)}</h2>
+                            <p className="text-lg text-gray-500">
+                                {selectedRecord.farms.length}農場 ／ 総入卵数 {selectedRecord.farms.reduce((s, f) => s + (f.eggCount || 0), 0).toLocaleString()}個
+                            </p>
+                        </div>
+                        {selectedRecord.farms.map(farm => (
+                            <FarmActualSection key={farm.id} farm={farm} calcModel={calcModel}
+                                onSave={(f, t) => saveFarmActual(selectedRecord.id, farm.id, f, t)} />
+                        ))}
+                    </div>
+                )}
+            </main>
+        </div>
+    );
+}
+
+// ===== 農場別実績入力セクション =====
+function FarmActualSection({ farm, onSave, calcModel }) {
+    const pred = farm.predictions;
+    const saved = farm.actual || {};
+    const [femaleInput, setFemaleInput] = useState(saved.femaleChicks != null ? String(saved.femaleChicks) : '');
+    const [totalInput, setTotalInput] = useState(saved.totalChicks != null ? String(saved.totalChicks) : '');
+
+    useEffect(() => {
+        setFemaleInput(saved.femaleChicks != null ? String(saved.femaleChicks) : '');
+        setTotalInput(saved.totalChicks != null ? String(saved.totalChicks) : '');
+    }, [saved.femaleChicks, saved.totalChicks]);
+
+    const primaryPred = pred ? (calcModel === 'normal' ? pred.normal : pred.linear) : null;
+    const femaleActual = parseInt(femaleInput) || null;
+    const modelLabel = calcModel === 'normal' ? '非対称正規分布' : '区分線形';
+
+    return (
+        <div className="bg-white rounded-2xl p-5 sm:p-6">
+            {/* 農場名・基本情報 */}
+            <div className="flex justify-between items-baseline mb-4">
+                <h3 className="text-2xl font-bold text-gray-700">{farm.farmName}</h3>
+                <div className="text-right text-base text-gray-400">
+                    <p>{(farm.eggCount || 0).toLocaleString()}個入卵</p>
+                    <p>{farm.parentAge}日齢 ／ 貯卵{farm.storageDays}日</p>
+                </div>
+            </div>
+
+            {/* 予測値 */}
+            {primaryPred ? (
+                <div className="bg-blue-50 rounded-xl p-4 mb-5">
+                    <p className="text-base text-blue-600 font-bold mb-3">予測（{modelLabel}モデル）</p>
+                    <div className="grid grid-cols-3 gap-3 text-center">
+                        <div>
+                            <p className="text-base text-gray-500 mb-1">メス鶏数</p>
+                            <p className="text-2xl sm:text-3xl font-bold text-blue-600">{primaryPred.femaleChicks.toLocaleString()}</p>
+                            <p className="text-base text-gray-400">羽</p>
+                        </div>
+                        <div>
+                            <p className="text-base text-gray-500 mb-1">総孵化数</p>
+                            <p className="text-2xl sm:text-3xl font-bold text-blue-600">{primaryPred.totalChicks.toLocaleString()}</p>
+                            <p className="text-base text-gray-400">羽</p>
+                        </div>
+                        <div>
+                            <p className="text-base text-gray-500 mb-1">孵化率</p>
+                            <p className="text-2xl sm:text-3xl font-bold text-blue-600">{primaryPred.hatchRate}</p>
+                            <p className="text-base text-gray-400">%</p>
+                        </div>
+                    </div>
+                </div>
+            ) : (
+                <div className="bg-gray-50 rounded-xl p-3 mb-5 text-center text-base text-gray-400">
+                    予測データなし（旧形式の記録）
+                </div>
+            )}
+
+            {/* 保存済みバッジ */}
+            {saved.recordedDate && (
+                <p className="text-base text-green-600 font-medium mb-3">
+                    ✓ 実績入力済み（{new Date(saved.recordedDate).toLocaleDateString('ja-JP')}）
+                </p>
+            )}
+
+            {/* 実績入力（ラベル常時表示） */}
+            <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <p className="text-lg font-bold text-gray-700 mb-2">実績 メス鶏数（羽）</p>
+                        <input type="number"
+                            value={femaleInput}
+                            onChange={e => setFemaleInput(e.target.value)}
+                            placeholder="羽数を入力"
+                            inputMode="numeric" min="0"
+                            className="w-full px-4 py-4 text-xl border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors" />
+                    </div>
+                    <div>
+                        <p className="text-lg font-bold text-gray-700 mb-2">実績 総孵化数（羽）</p>
+                        <input type="number"
+                            value={totalInput}
+                            onChange={e => setTotalInput(e.target.value)}
+                            placeholder="羽数を入力"
+                            inputMode="numeric" min="0"
+                            className="w-full px-4 py-4 text-xl border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors" />
+                    </div>
+                </div>
+                <button onClick={() => onSave(femaleInput, totalInput)}
+                    className="w-full py-5 bg-green-600 active:bg-green-700 text-white text-xl font-bold rounded-xl transition-colors">
+                    実績を保存する
+                </button>
+            </div>
+
+            {/* 精度分析（実績入力後） */}
+            {femaleActual != null && pred && (
+                <div className="mt-5 bg-green-50 border border-green-100 rounded-xl p-4">
+                    <p className="text-lg font-bold text-green-700 mb-3">予測精度（メス鶏数で比較）</p>
+                    <div className="grid grid-cols-2 gap-3">
+                        {[
+                            { label: '区分線形', predVal: pred.linear?.femaleChicks },
+                            { label: '正規分布', predVal: pred.normal?.femaleChicks }
+                        ].filter(x => x.predVal != null).map((item, i) => {
+                            const diff = femaleActual - item.predVal;
+                            const pct = Math.abs(diff / item.predVal * 100).toFixed(1);
+                            const acc = (100 - parseFloat(pct)).toFixed(1);
+                            return (
+                                <div key={i} className="bg-white rounded-xl p-4 text-center">
+                                    <p className="text-base text-gray-500 mb-1">{item.label}</p>
+                                    <p className={`text-2xl font-bold ${diff >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                        {diff >= 0 ? '+' : ''}{diff.toLocaleString()}羽
+                                    </p>
+                                    <p className="text-base text-gray-400 mt-1">誤差率 {pct}%</p>
+                                    <p className="text-lg font-bold text-blue-600 mt-0.5">精度 {acc}%</p>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
 </body>
 </html>
