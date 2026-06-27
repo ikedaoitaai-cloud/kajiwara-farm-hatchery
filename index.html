@@ -87,12 +87,6 @@ const calcTotals = (farmResults, totalEggs) => {
     };
 };
 const getMonth = (dateStr) => new Date(dateStr + 'T00:00:00').getMonth() + 1;
-const getSeason = (month) => {
-    if (month >= 3 && month <= 5) return 'spring';
-    if (month >= 6 && month <= 8) return 'summer';
-    if (month >= 9 && month <= 11) return 'autumn';
-    return 'winter';
-};
 const fmtDate = (dateStr) => new Date(dateStr + 'T00:00:00').toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' });
 const padZ = (n) => String(n).padStart(2, '0');
 
@@ -148,6 +142,27 @@ function Toast({ message, onHide }) {
     );
 }
 
+// ===== 予測値グリッド（メス鶏数・総孵化数・孵化率の共通表示） =====
+function PredictionGrid({ data, size = 'lg' }) {
+    const num = size === 'lg' ? 'text-3xl sm:text-4xl' : 'text-2xl sm:text-3xl';
+    const cells = [
+        { label: 'メス鶏数', val: data.femaleChicks.toLocaleString(), unit: '羽' },
+        { label: '総孵化数', val: data.totalChicks.toLocaleString(), unit: '羽' },
+        { label: '孵化率', val: data.hatchRate, unit: '%' },
+    ];
+    return (
+        <div className="grid grid-cols-3 gap-3 text-center">
+            {cells.map(c => (
+                <div key={c.label}>
+                    <p className="text-base text-gray-500 mb-1">{c.label}</p>
+                    <p className={`${num} font-bold text-blue-600`}>{c.val}</p>
+                    <p className="text-base text-gray-400">{c.unit}</p>
+                </div>
+            ))}
+        </div>
+    );
+}
+
 // ===== メインアプリ =====
 function App() {
     const [screen, setScreen] = useState('top');
@@ -182,9 +197,7 @@ function App() {
     const showToast = (msg) => setToast(msg);
     const addRecord = (r) => { if (persistRecords([r, ...records])) showToast('記録として保存しました'); };
     const updateRecord = (id, fn) => persistRecords(records.map(r => r.id === id ? fn(r) : r));
-    const deleteRecord = (id) => showConfirm('この記録を削除しますか？', () => { if (persistRecords(records.filter(r => r.id !== id))) showToast('記録を削除しました'); }, '削除', true);
-
-    const shared = { screen, setScreen, records, addRecord, updateRecord, deleteRecord, persistRecords, showAlert, showConfirm, showToast, calcModel, setCalcModel };
+    const shared = { screen, setScreen, records, addRecord, updateRecord, persistRecords, showAlert, showConfirm, showToast, calcModel, setCalcModel };
 
     return (
         <>
@@ -619,6 +632,7 @@ function CalculationScreen({ setScreen, addRecord, showAlert, showToast, calcMod
     const farmResults = useMemo(() => farms.map(f => calcOneFarm(f.age, f.eggs, f.storageDays, month)), [farms, month]);
     const totalEggs = useMemo(() => farms.reduce((s, f) => s + (parseInt(f.eggs) || 0), 0), [farms]);
     const totalResult = useMemo(() => calcTotals(farmResults, totalEggs), [farmResults, totalEggs]);
+    const totalPrimary = totalResult ? (calcModel === 'normal' ? totalResult.normal : totalResult.linear) : null;
 
     const setFarm = (id, key, val) => setFarms(prev => prev.map(f => f.id === id ? { ...f, [key]: val } : f));
     const removeFarm = (id) => { if (farms.length > 1) setFarms(prev => prev.filter(f => f.id !== id)); };
@@ -630,7 +644,6 @@ function CalculationScreen({ setScreen, addRecord, showAlert, showToast, calcMod
             id: Date.now(),
             recordDate: new Date().toISOString(),
             incubationDate: date,
-            environment: { month, season: getSeason(month) },
             farms: valid.map(f => {
                 const r = farmResults[farms.indexOf(f)];
                 return {
@@ -761,23 +774,7 @@ function CalculationScreen({ setScreen, addRecord, showAlert, showToast, calcMod
                             {primaryResult ? (
                                 <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 sm:p-5">
                                     <p className="text-base text-blue-600 font-bold mb-3">この農場の予測（{modelLabel}）</p>
-                                    <div className="grid grid-cols-3 gap-3 text-center">
-                                        <div>
-                                            <p className="text-base text-gray-500 mb-1">メス鶏数</p>
-                                            <p className="text-3xl sm:text-4xl font-bold text-blue-600">{primaryResult.femaleChicks.toLocaleString()}</p>
-                                            <p className="text-base text-gray-400">羽</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-base text-gray-500 mb-1">総孵化数</p>
-                                            <p className="text-3xl sm:text-4xl font-bold text-blue-600">{primaryResult.totalChicks.toLocaleString()}</p>
-                                            <p className="text-base text-gray-400">羽</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-base text-gray-500 mb-1">孵化率</p>
-                                            <p className="text-3xl sm:text-4xl font-bold text-blue-600">{primaryResult.hatchRate}</p>
-                                            <p className="text-base text-gray-400">%</p>
-                                        </div>
-                                    </div>
+                                    <PredictionGrid data={primaryResult} size="lg" />
                                 </div>
                             ) : (
                                 <div className="bg-gray-50 rounded-xl p-5 text-center text-lg text-gray-400">
@@ -808,9 +805,9 @@ function CalculationScreen({ setScreen, addRecord, showAlert, showToast, calcMod
                         </div>
                         <div className="grid grid-cols-3 gap-3 mb-6">
                             {[
-                                { label: 'メス鶏数', val: (calcModel === 'normal' ? totalResult.normal : totalResult.linear).femaleChicks.toLocaleString(), unit: '羽' },
-                                { label: '総孵化数', val: (calcModel === 'normal' ? totalResult.normal : totalResult.linear).totalChicks.toLocaleString(), unit: '羽' },
-                                { label: '総孵化率', val: (calcModel === 'normal' ? totalResult.normal : totalResult.linear).hatchRate, unit: '%' },
+                                { label: 'メス鶏数', val: totalPrimary.femaleChicks.toLocaleString(), unit: '羽' },
+                                { label: '総孵化数', val: totalPrimary.totalChicks.toLocaleString(), unit: '羽' },
+                                { label: '総孵化率', val: totalPrimary.hatchRate, unit: '%' },
                             ].map(item => (
                                 <div key={item.label} className="bg-white bg-opacity-15 rounded-xl p-3 sm:p-4 text-center">
                                     <p className="text-sm opacity-80 mb-1">{item.label}</p>
@@ -1015,23 +1012,7 @@ function FarmActualSection({ farm, onSave, calcModel }) {
             {primaryPred ? (
                 <div className="bg-blue-50 rounded-xl p-4 mb-5">
                     <p className="text-base text-blue-600 font-bold mb-3">予測（{modelLabel}モデル）</p>
-                    <div className="grid grid-cols-3 gap-3 text-center">
-                        <div>
-                            <p className="text-base text-gray-500 mb-1">メス鶏数</p>
-                            <p className="text-2xl sm:text-3xl font-bold text-blue-600">{primaryPred.femaleChicks.toLocaleString()}</p>
-                            <p className="text-base text-gray-400">羽</p>
-                        </div>
-                        <div>
-                            <p className="text-base text-gray-500 mb-1">総孵化数</p>
-                            <p className="text-2xl sm:text-3xl font-bold text-blue-600">{primaryPred.totalChicks.toLocaleString()}</p>
-                            <p className="text-base text-gray-400">羽</p>
-                        </div>
-                        <div>
-                            <p className="text-base text-gray-500 mb-1">孵化率</p>
-                            <p className="text-2xl sm:text-3xl font-bold text-blue-600">{primaryPred.hatchRate}</p>
-                            <p className="text-base text-gray-400">%</p>
-                        </div>
-                    </div>
+                    <PredictionGrid data={primaryPred} size="sm" />
                 </div>
             ) : (
                 <div className="bg-gray-50 rounded-xl p-3 mb-5 text-center text-base text-gray-400">
