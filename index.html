@@ -269,7 +269,7 @@ function AdminScreen({ setScreen, calcModel, setCalcModel }) {
             name: '区分線形モデル',
             badge: '推奨',
             icon: '📐',
-            summary: 'お母様の経験に基づいた実用的なモデルです。親鳥の日齢を段階ごとに区切り、それぞれの孵化率を設定しています。調整しやすく、結果が直感的に理解できます。',
+            summary: 'カジワラファーム社で積み上げた経験に基づいて作成した、実用的なモデルです。親鳥の日齢を段階ごとに区切り、それぞれの孵化率を設定しています。調整しやすく、結果が直感的に理解できます。',
             rows: [
                 { range: '165日以下', rate: '20%', note: '若い親鳥はまだ成熟していません' },
                 { range: '165〜230日', rate: '20% → 40%', note: '成長期：孵化率が上昇します' },
@@ -283,7 +283,7 @@ function AdminScreen({ setScreen, calcModel, setCalcModel }) {
             name: '非対称正規分布モデル',
             badge: '参考',
             icon: '📊',
-            summary: '生物学的な理論に基づくモデルです。孵化率の変化がなめらかな曲線で表されます。若い親鳥ではすばやく変化し、高齢ではゆっくり変化するという非対称な特性を持ちます。',
+            summary: '区分線形モデルをベースに、孵化率の変化をなめらかな曲線で表したモデルです。区分線形モデルでも表されていた、若い親鳥ではすばやく変化し、高齢ではゆっくり変化するという非対称な特性も同様に表現しています。',
             rows: [
                 { range: '240日齢', rate: '40%（ピーク）', note: '理論上の最適日齢' },
                 { range: '若い方向', rate: '急激に変化', note: '日齢が低いと急速に孵化率が落ちます' },
@@ -402,6 +402,39 @@ function AdminScreen({ setScreen, calcModel, setCalcModel }) {
                     <p className="text-lg text-gray-600 leading-relaxed">
                         総孵化数のうち <strong className="text-blue-600 text-2xl">61%</strong> をメス鶏として計算します（オス39%）。
                     </p>
+                </div>
+
+                {/* 計算式の全体像 */}
+                <div className="bg-white rounded-2xl p-5 sm:p-6 border border-gray-100">
+                    <div className="flex items-center gap-3 mb-4">
+                        <span className="text-3xl">📝</span>
+                        <h3 className="font-bold text-xl text-gray-700">計算式の全体像</h3>
+                    </div>
+                    <p className="text-base text-gray-500 mb-4">各数値がどのように組み合わさって最終的な予測値になるかを示します。</p>
+                    <div className="space-y-3">
+                        <div className="bg-blue-50 rounded-xl p-4">
+                            <p className="text-base font-bold text-blue-700 mb-2">① 農場ごとの総孵化数</p>
+                            <p className="text-lg text-gray-700 leading-relaxed">
+                                入卵数 × 基礎孵化率（日齢） × 貯卵日数補正 × 季節補正
+                                <span className="block mt-1 text-base text-gray-400">例：10,000個 × 40% × 1.00 × 0.92 ＝ 3,680羽</span>
+                            </p>
+                        </div>
+                        <div className="text-center text-2xl text-gray-300 py-1">↓ 全農場を合計</div>
+                        <div className="bg-indigo-50 rounded-xl p-4">
+                            <p className="text-base font-bold text-indigo-700 mb-2">② 総孵化数（全農場合計）</p>
+                            <p className="text-lg text-gray-700">
+                                農場Aの孵化数 ＋ 農場Bの孵化数 ＋ …
+                            </p>
+                        </div>
+                        <div className="text-center text-2xl text-gray-300 py-1">↓ メス鶏率をかける</div>
+                        <div className="bg-green-50 rounded-xl p-4">
+                            <p className="text-base font-bold text-green-700 mb-2">③ 予測メス鶏数</p>
+                            <p className="text-lg text-gray-700">
+                                総孵化数 × 61%
+                                <span className="block mt-1 text-base text-gray-400">例：3,680羽 × 61% ＝ 2,245羽</span>
+                            </p>
+                        </div>
+                    </div>
                 </div>
 
                 <div className="pb-4 text-center">
