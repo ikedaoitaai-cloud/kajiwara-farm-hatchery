@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="description" content="カジワラファーム様向け孵化率予測システム">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>孵化率予測システム - カジワラファーム</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ["'Noto Sans JP'", "'Hiragino Kaku Gothic ProN'", "system-ui", "sans-serif"] },
+                    colors: {
+                        cream: '#FDFBF7', ink: '#1C1917', body: '#57534E', faint: '#A8A29E', line: '#E7E5E4', soft: '#F5F5F4',
+                        brand: { DEFAULT: '#D97706', mid: '#A16207', deep: '#92400E', bg: '#FFFBEB', border: '#FDE68A', hd: '#FEF3C7', hover: '#B45309' },
+                        sec:   { DEFAULT: '#7C3AED', deep: '#5B21B6', hover: '#6D28D9', bg: '#F5F3FF', bg2: '#F9F7FF', border: '#DDD6FE', hd: '#EDE9FE' },
+                        ok:    { DEFAULT: '#16A34A', bg: '#F0FDF4', border: '#D1FAE5' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body { -webkit-font-smoothing: antialiased; padding-bottom: env(safe-area-inset-bottom); }
+        button, input, select, label { touch-action: manipulation; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in { animation: fadeIn 0.2s ease-out; }
+        @keyframes slideUp { from { opacity: 0; transform: translateX(-50%) translateY(20px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+        .toast-anim { animation: slideUp 0.3s ease-out; }
+        input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number] { -moz-appearance: textfield; }
+    </style>
+</head>
+<body class="bg-cream font-sans text-ink">
+<div id="root"></div>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
+<script>
+// ===== API 抽象化レイヤー =====
+// GAS上ではgoogle.script.run経由でCode.jsを呼ぶ。
+// GAS外（ローカルのブラウザ確認など）で開いた場合はlocalStorageにフォールバックする。
+const Api = (() => {
+    const hasGAS = typeof google !== 'undefined' && google.script && google.script.run;
+    if (hasGAS) {
+        return {
+            checkPassword: (pw) => new Promise((resolve, reject) => {
+                google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).checkPassword(pw);
+            }),
+            getRecords: () => new Promise((resolve, reject) => {
+                google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).getRecords();
+            }),
+            saveRecords: (records) => new Promise((resolve, reject) => {
+                google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).saveRecords(records);
+            }),
+        };
+    }
+    // ローカル動作確認用フォールバック（本番では使われない）
+    return {
+        checkPassword: (pw) => Promise.resolve(pw === 'demo'),
+        getRecords: () => Promise.resolve(JSON.parse(localStorage.getItem('hatcheryRecordsV4') || '[]')),
+        saveRecords: (records) => { localStorage.setItem('hatcheryRecordsV4', JSON.stringify(records)); return Promise.resolve(true); },
+    };
+})();
+</script>
+<script type="text/babel">
+const { useState, useEffect, useMemo, useRef } = React;
+
+// ===== 計算ロジック =====
+const piecewiseLinear = (age) => {
+    if (age < 165) return 20.0;
+    if (age <= 230) return 20 + (40 - 20) * (age - 165) / (230 - 165);
+    if (age <= 250) return 40.0;
+    if (age <= 530) return 40 - (40 - 35) * (age - 250) / (530 - 250);
+    return 35 - (35 - 32) * Math.min((age - 530) / 200, 1.0);
+};
+const asymmetricNormal = (age) => {
+    const sigma = age <= 240 ? 32 : 300;
+    return 24.5 + 15.5 * Math.exp(-0.5 * Math.pow((age - 240) / sigma, 2));
+};
+const storageFactor = (days) => {
+    if (days <= 7) return 1.0;
+    if (days <= 10) return 0.95;
+    if (days <= 16) return 0.85;
+    return 0.60;
+};
+const seasonFactor = (month) => {
+    if (month >= 6 && month <= 9) return 0.92;
+    if (month === 1) return 0.95;
+    return 1.0;
+};
+const calcOneFarm = (age, eggs, storageDays, month) => {
+    const a = parseInt(age) || 0;
+    const e = parseInt(eggs) || 0;
+    const d = parseInt(storageDays) || 0;
+    if (a <= 0 || e <= 0) return null;
+    const sf = storageFactor(d);
+    const seaf = seasonFactor(month);
+    const linRate = piecewiseLinear(a);
+    const norRate = asymmetricNormal(a);
+    const linTotal = Math.round(e * (linRate / 100) * sf * seaf);
+    const norTotal = Math.round(e * (norRate / 100) * sf * seaf);
+    return {
+        linear: { totalChicks: linTotal, femaleChicks: Math.round(linTotal * 0.61), hatchRate: ((linTotal / e) * 100).toFixed(1) },
+        normal: { totalChicks: norTotal, femaleChicks: Math.round(norTotal * 0.61), hatchRate: ((norTotal / e) * 100).toFixed(1) }
+    };
+};
+const calcTotals = (farmResults, totalEggs) => {
+    if (totalEggs === 0) return null;
+    const linTotal = farmResults.reduce((s, r) => s + (r ? r.linear.totalChicks : 0), 0);
+    const norTotal = farmResults.reduce((s, r) => s + (r ? r.normal.totalChicks : 0), 0);
+    return {
+        totalEggs,
+        linear: { totalChicks: linTotal, femaleChicks: Math.round(linTotal * 0.61), hatchRate: ((linTotal / totalEggs) * 100).toFixed(1) },
+        normal: { totalChicks: norTotal, femaleChicks: Math.round(norTotal * 0.61), hatchRate: ((norTotal / totalEggs) * 100).toFixed(1) }
+    };
+};
+const getMonth = (dateStr) => new Date(dateStr + 'T00:00:00').getMonth() + 1;
+const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
+const fmtDateFull = (s) => { const d = new Date(s + 'T00:00:00'); return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日（${WEEKDAYS[d.getDay()]}）`; };
+const fmtDateMD = (s) => { const d = new Date(s + 'T00:00:00'); return `${d.getMonth() + 1}月${d.getDate()}日（${WEEKDAYS[d.getDay()]}）`; };
+const padZ = (n) => String(n).padStart(2, '0');
+const modelName = (m) => m === 'normal' ? '非対称正規分布' : '区分線形';
+
+// ===== マイグレーション =====
+const migrateToV4 = (r) => ({
+    ...r,
+    farms: (r.farms || []).map(f => ({
+        id: f.id || (Date.now() + Math.random()),
+        farmName: f.farmName || '',
+        parentAge: f.parentAge || parseInt(f.age) || 0,
+        eggCount: f.eggCount || parseInt(f.eggs) || 0,
+        storageDays: f.storageDays || 0,
+        predictions: f.predictions || null,
+        actual: f.actual || { femaleChicks: null, totalChicks: null, recordedDate: null }
+    })),
+    totalPredictions: r.totalPredictions || r.predictions || null
+});
+
+// ===== 共通: 数値入力フィールド =====
+function NumberField({ value, onChange, placeholder, unit, min, max, box }) {
+    return (
+        <div className={`flex items-baseline gap-1 rounded-[12px] border-2 px-4 py-[10px] ${box}`}>
+            <input type="number" value={value} onChange={onChange} placeholder={placeholder}
+                inputMode="numeric" min={min} max={max}
+                className="flex-1 w-full min-w-0 bg-transparent outline-none text-[20px] font-bold text-ink placeholder:text-faint placeholder:font-medium" />
+            {unit && <span className="shrink-0 text-[13px] font-medium text-faint">{unit}</span>}
+        </div>
+    );
+}
+
+// ===== 共通: ページヘッダー =====
+function PageHeader({ records, border = 'border-brand-hd', onBack, onAdmin, onExport }) {
+    const subBtn = "bg-soft border-2 border-line rounded-[10px] px-5 py-[11px] text-[16px] text-body font-semibold hover:bg-line transition-colors";
+    return (
+        <header className={`bg-white border-b-2 ${border} px-6 sm:px-12 py-5 flex items-center justify-between flex-shrink-0 flex-wrap gap-3`}>
+            <div className="flex items-center gap-4">
+                <span className="text-[52px] leading-none">🐣</span>
+                <div>
+                    <div className="text-[22px] font-bold text-ink leading-tight">孵化率予測システム</div>
+                    <div className="text-[18px] text-brand-mid font-extrabold mt-1">カジワラファーム</div>
+                </div>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
+                <div className="bg-brand-bg border-2 border-brand-border rounded-[10px] px-[22px] py-[11px] text-[16px] text-brand-deep font-bold whitespace-nowrap">📊 記録数：{records.length}件</div>
+                {onAdmin && <button onClick={onAdmin} className={subBtn}>⚙️ 管理</button>}
+                {onExport && <button onClick={onExport} className={subBtn}>📤 出力</button>}
+                {onBack && <button onClick={onBack} className="bg-soft border-2 border-line rounded-[10px] px-6 py-[11px] text-[16px] text-body font-bold hover:bg-line transition-colors whitespace-nowrap">← ホームへ戻る</button>}
+            </div>
+        </header>
+    );
+}
+
+// ===== 共通: タイトルバー =====
+function TitleBar({ border, icon, title, subtitle, stack }) {
+    return (
+        <div className={`bg-white border-b-2 ${border} px-6 sm:px-12 py-[14px] flex-shrink-0 ${stack ? '' : 'flex items-center gap-4 flex-wrap'}`}>
+            <div className="text-[26px] font-bold text-ink">{icon} {title}</div>
+            {subtitle && <div className={`text-[15px] text-faint ${stack ? 'mt-1' : ''}`}>{subtitle}</div>}
+        </div>
+    );
+}
+
+// ===== モーダル =====
+function Modal({ config, onClose }) {
+    if (!config) return null;
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(28,25,23,0.5)' }}>
+            <div className="bg-white rounded-[20px] shadow-2xl p-7 w-full max-w-sm fade-in">
+                <p className="text-center text-ink text-[19px] font-medium leading-relaxed mb-6 whitespace-pre-line">{config.message}</p>
+                {config.type === 'alert' ? (
+                    <button onClick={onClose} className="w-full py-4 bg-brand hover:bg-brand-hover text-white text-[18px] font-bold rounded-[14px] transition-colors">OK</button>
+                ) : (
+                    <div className="flex gap-3">
+                        <button onClick={() => { config.onConfirm(); onClose(); }}
+                            className={`flex-1 py-4 text-[18px] font-bold rounded-[14px] text-white transition-colors ${config.danger ? 'bg-[#EF4444] hover:bg-[#DC2626]' : 'bg-brand hover:bg-brand-hover'}`}>
+                            {config.confirmLabel || '確認'}
+                        </button>
+                        <button onClick={onClose} className="flex-1 py-4 bg-soft hover:bg-line text-body text-[18px] font-medium rounded-[14px] transition-colors">
+                            キャンセル
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// ===== トースト =====
+function Toast({ message, onHide }) {
+    useEffect(() => { const t = setTimeout(onHide, 2500); return () => clearTimeout(t); }, []);
+    return (
+        <div className="fixed bottom-8 left-1/2 z-40 toast-anim" style={{ transform: 'translateX(-50%)' }}>
+            <div className="bg-ink text-white px-6 py-4 rounded-full shadow-xl text-[17px] font-medium whitespace-nowrap">
+                ✓ {message}
+            </div>
+        </div>
+    );
+}
+
+// ===== ログイン画面 =====
+function LoginScreen({ onSuccess }) {
+    const [pw, setPw] = useState('');
+    const [error, setError] = useState('');
+    const [checking, setChecking] = useState(false);
+
+    const submit = (e) => {
+        e.preventDefault();
+        if (!pw || checking) return;
+        setChecking(true);
+        setError('');
+        Api.checkPassword(pw).then(ok => {
+            setChecking(false);
+            if (ok) { localStorage.setItem('authOk', '1'); onSuccess(); }
+            else setError('パスワードが違います');
+        }).catch(() => { setChecking(false); setError('確認に失敗しました。通信環境をご確認ください。'); });
+    };
+
+    return (
+        <div className="min-h-screen bg-cream flex items-center justify-center px-6">
+            <form onSubmit={submit} className="bg-white rounded-[24px] px-10 py-11 border-[3px] border-brand-border shadow-[0_4px_24px_rgba(217,119,6,0.15)] w-full max-w-sm text-center">
+                <div className="text-[48px] mb-4">🐣</div>
+                <div className="text-[22px] font-bold text-ink mb-1">孵化率予測システム</div>
+                <div className="text-[16px] text-brand-mid font-bold mb-7">カジワラファーム</div>
+                <input type="password" value={pw} onChange={e => setPw(e.target.value)} placeholder="パスワードを入力"
+                    className="w-full bg-brand-bg border-2 border-brand-border rounded-[12px] px-4 py-3.5 text-[18px] text-ink outline-none mb-3 text-center" autoFocus />
+                {error && <div className="text-[14px] text-[#EF4444] font-semibold mb-3">{error}</div>}
+                <button type="submit" disabled={checking}
+                    className="w-full bg-brand hover:bg-brand-hover transition-colors text-white rounded-[14px] px-8 py-4 text-[18px] font-bold disabled:opacity-60">
+                    {checking ? '確認中…' : '入る'}
+                </button>
+            </form>
+        </div>
+    );
+}
+
+// ===== メインアプリ =====
+function App() {
+    const [authed, setAuthed] = useState(() => localStorage.getItem('authOk') === '1');
+    const [loading, setLoading] = useState(true);
+    const [screen, setScreen] = useState('top');
+    const [records, setRecords] = useState([]);
+    const [calcModel, setCalcModelState] = useState(() => localStorage.getItem('calcModel') || 'linear');
+    const [modalConfig, setModalConfig] = useState(null);
+    const [toast, setToast] = useState(null);
+
+    const setCalcModel = (m) => { setCalcModelState(m); localStorage.setItem('calcModel', m); };
+    const showAlert = (msg, isErr = false) => setModalConfig({ type: 'alert', message: msg, isError: isErr });
+    const showConfirm = (msg, onConfirm, label = '確認', danger = false) => setModalConfig({ type: 'confirm', message: msg, onConfirm, confirmLabel: label, danger });
+    const showToast = (msg) => setToast(msg);
+
+    useEffect(() => {
+        if (!authed) return;
+        setLoading(true);
+        Api.getRecords()
+            .then(rs => setRecords((rs || []).map(migrateToV4)))
+            .catch(() => showAlert('データの読み込みに失敗しました。通信環境をご確認ください。', true))
+            .finally(() => setLoading(false));
+    }, [authed]);
+
+    const persistRecords = (nr) => {
+        setRecords(nr);
+        Api.saveRecords(nr).catch(() => showAlert('データの保存に失敗しました。通信環境をご確認のうえ、もう一度お試しください。', true));
+        return true;
+    };
+    const addRecord = (r) => { if (persistRecords([r, ...records])) showToast('記録として保存しました'); };
+    const updateRecord = (id, fn) => persistRecords(records.map(r => r.id === id ? fn(r) : r));
+
+    const shared = { screen, setScreen, records, addRecord, updateRecord, persistRecords, showAlert, showConfirm, showToast, calcModel, setCalcModel };
+
+    if (!authed) return <LoginScreen onSuccess={() => setAuthed(true)} />;
+
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-cream flex items-center justify-center">
+                <div className="text-[18px] text-body font-bold">読み込み中…</div>
+            </div>
+        );
+    }
+
+    return (
+        <>
+            <Modal config={modalConfig} onClose={() => setModalConfig(null)} />
+            {toast && <Toast message={toast} onHide={() => setToast(null)} />}
+            {screen === 'top'         && <TopScreen {...shared} />}
+            {screen === 'admin'       && <AdminScreen {...shared} />}
+            {screen === 'export'      && <DataExportScreen {...shared} />}
+            {screen === 'calculation' && <CalculationScreen {...shared} />}
+            {screen === 'results'     && <HatchResultsScreen {...shared} />}
+        </>
+    );
+}
+
+// ===== トップページ =====
+function TopScreen({ setScreen, records, calcModel }) {
+    const today = new Date().toISOString().split('T')[0];
+    const label = modelName(calcModel) + (calcModel === 'normal' ? '（参考）' : '（推奨）');
+    return (
+        <div className="min-h-screen bg-cream flex flex-col">
+            <PageHeader records={records} onAdmin={() => setScreen('admin')} onExport={() => setScreen('export')} />
+            <main className="flex-1 flex flex-col items-center justify-center px-6 sm:px-16 py-10">
+                <div className="text-center mb-11">
+                    <div className="text-[20px] text-brand-mid font-extrabold mb-2.5">{fmtDateFull(today)}</div>
+                    <div className="text-[44px] font-black text-ink leading-tight tracking-tight">今日は何をしますか？</div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-7 w-full max-w-[960px] mb-9">
+                    {/* 計算 */}
+                    <button onClick={() => setScreen('calculation')}
+                        className="bg-white rounded-[24px] px-10 py-11 border-[3px] border-brand-border text-center shadow-[0_4px_24px_rgba(217,119,6,0.15)] hover:-translate-y-0.5 transition-transform">
+                        <div className="w-24 h-24 bg-brand-bg border-[3px] border-brand-border rounded-[28px] flex items-center justify-center mx-auto mb-6 text-[48px] leading-none">🧮</div>
+                        <div className="text-[30px] font-bold text-ink mb-3.5 leading-tight">入卵数の計算</div>
+                        <div className="text-[19px] text-body leading-loose mb-8">日齢・入卵数・貯卵日数を<br />入力して孵化予測をおこないます</div>
+                        <div className="bg-brand hover:bg-brand-hover transition-colors text-white rounded-[16px] px-8 py-[22px] text-[22px] font-bold">計算する</div>
+                    </button>
+                    {/* 実績 */}
+                    <button onClick={() => setScreen('results')}
+                        className="bg-white rounded-[24px] px-10 py-11 border-[3px] border-sec-border text-center shadow-[0_4px_24px_rgba(124,58,237,0.12)] hover:-translate-y-0.5 transition-transform">
+                        <div className="w-24 h-24 bg-sec-bg border-[3px] border-sec-border rounded-[28px] flex items-center justify-center mx-auto mb-6 text-[48px] leading-none">📋</div>
+                        <div className="text-[30px] font-bold text-ink mb-3.5 leading-tight">孵化実績入力</div>
+                        <div className="text-[19px] text-body leading-loose mb-8">実際の孵化羽数を<br />記録します</div>
+                        <div className="bg-sec hover:bg-sec-hover transition-colors text-white rounded-[16px] px-8 py-[22px] text-[22px] font-bold">実績を入力する</div>
+                    </button>
+                </div>
+                <button onClick={() => setScreen('admin')}
+                    className="flex items-center gap-2 opacity-45 hover:opacity-80 transition-opacity border border-[#D6D3D1] rounded-[8px] px-4 py-2">
+                    <span className="text-[12px] text-[#78716C]">使用モデル：{label}</span>
+                    <span className="text-[12px] text-[#78716C] underline">変更</span>
+                </button>
+            </main>
+        </div>
+    );
+}
+
+// ===== データ出力画面 =====
+function DataExportScreen({ setScreen, records, persistRecords, showAlert, showConfirm, showToast }) {
+
+    const exportCSV = () => {
+        if (records.length === 0) { showAlert('エクスポートする記録がありません'); return; }
+        const header = ['入卵日', '農場名', '入卵数', '貯卵日数', '親鳥日齢', '予測メス鶏数', '予測総孵化数', '予測孵化率%', '実績メス鶏数', '実績総孵化数', '実績記録日', '登録日時'];
+        const rows = records.flatMap(r =>
+            r.farms.map(f => [
+                r.incubationDate, f.farmName, f.eggCount, f.storageDays, f.parentAge,
+                f.predictions?.linear?.femaleChicks ?? '',
+                f.predictions?.linear?.totalChicks ?? '',
+                f.predictions?.linear?.hatchRate ?? '',
+                f.actual?.femaleChicks ?? '',
+                f.actual?.totalChicks ?? '',
+                f.actual?.recordedDate ? new Date(f.actual.recordedDate).toLocaleString('ja-JP') : '',
+                new Date(r.recordDate).toLocaleString('ja-JP')
+            ])
+        );
+        const csv = '﻿' + [header, ...rows].map(row => row.join(',')).join('\n');
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+        a.download = `孵化記録_${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+        showToast('CSVをダウンロードしました');
+    };
+
+    const exportJSON = () => {
+        if (records.length === 0) { showAlert('エクスポートする記録がありません'); return; }
+        const data = { version: 'v4', exportDate: new Date().toISOString(), records };
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+        a.download = `孵化記録バックアップ_${new Date().toISOString().split('T')[0]}.json`;
+        a.click();
+        showToast('バックアップを保存しました');
+    };
+
+    const importJSON = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            try {
+                const data = JSON.parse(ev.target.result);
+                let imported;
+                if (data.version === 'v4' && Array.isArray(data.records)) imported = data.records;
+                else if (data.version === 'v3' && Array.isArray(data.records)) imported = data.records.map(migrateToV4);
+                else if (Array.isArray(data)) imported = data.map(migrateToV4);
+                else throw new Error('Unknown format');
+                showConfirm(
+                    `${imported.length}件の記録をインポートします。\n現在の記録と統合されます。よろしいですか？`,
+                    () => {
+                        const ids = new Set(records.map(r => r.id));
+                        const merged = [...imported.filter(r => !ids.has(r.id)), ...records];
+                        merged.sort((a, b) => new Date(b.recordDate) - new Date(a.recordDate));
+                        if (persistRecords(merged)) showToast(`${imported.length}件をインポートしました`);
+                    }, 'インポート'
+                );
+            } catch { showAlert('ファイルの読み込みに失敗しました。バックアップファイルを確認してください。', true); }
+        };
+        reader.readAsText(file);
+        e.target.value = '';
+    };
+
+    return (
+        <div className="min-h-screen bg-cream flex flex-col">
+            <PageHeader records={records} onBack={() => setScreen('top')} />
+            <TitleBar border="border-ok-border" icon="📤" title="データ出力" />
+            <main className="flex-1 px-6 sm:px-12 py-8">
+                <div className="bg-white rounded-[16px] px-7 py-5 mb-7 border-2 border-line flex items-center gap-3.5">
+                    <div className="text-[28px]">💾</div>
+                    <div>
+                        <div className="text-[18px] font-bold text-ink">現在 <span className="text-[28px] text-brand font-black">{records.length}件</span> の入卵記録が保存されています</div>
+                        <div className="text-[15px] text-faint mt-1">定期的にバックアップを取ることをおすすめします</div>
+                    </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                    {/* CSV */}
+                    <button onClick={exportCSV}
+                        className="bg-white rounded-[20px] px-7 py-8 border-[2.5px] border-ok-border shadow-[0_2px_12px_rgba(5,150,105,0.08)] text-center hover:-translate-y-0.5 transition-transform">
+                        <div className="w-20 h-20 bg-ok-bg rounded-[20px] flex items-center justify-center mx-auto mb-5 text-[40px]">📊</div>
+                        <div className="text-[22px] font-bold text-ink mb-2.5">CSV出力</div>
+                        <div className="text-[16px] text-body leading-relaxed mb-6">Excelで開ける形式で記録を出力します。農場ごとに1行で出力されます。</div>
+                        <div className="bg-[#059669] hover:bg-[#047857] transition-colors text-white rounded-[12px] py-4 text-[17px] font-bold">CSV をダウンロード</div>
+                    </button>
+                    {/* バックアップ */}
+                    <button onClick={exportJSON}
+                        className="bg-white rounded-[20px] px-7 py-8 border-[2.5px] border-[#BFDBFE] shadow-[0_2px_12px_rgba(37,99,235,0.08)] text-center hover:-translate-y-0.5 transition-transform">
+                        <div className="w-20 h-20 bg-[#EFF6FF] rounded-[20px] flex items-center justify-center mx-auto mb-5 text-[40px]">💾</div>
+                        <div className="text-[22px] font-bold text-ink mb-2.5">バックアップ</div>
+                        <div className="text-[16px] text-body leading-relaxed mb-6">すべての記録をJSONファイルとして保存します。データ移行・保存に使用してください。</div>
+                        <div className="bg-[#2563EB] hover:bg-[#1D4ED8] transition-colors text-white rounded-[12px] py-4 text-[17px] font-bold">バックアップを保存</div>
+                    </button>
+                    {/* 復元 */}
+                    <label className="cursor-pointer bg-white rounded-[20px] px-7 py-8 border-[2.5px] border-sec-border shadow-[0_2px_12px_rgba(124,58,237,0.08)] text-center hover:-translate-y-0.5 transition-transform block">
+                        <div className="w-20 h-20 bg-sec-bg rounded-[20px] flex items-center justify-center mx-auto mb-5 text-[40px]">📂</div>
+                        <div className="text-[22px] font-bold text-ink mb-2.5">復元</div>
+                        <div className="text-[16px] text-body leading-relaxed mb-6">バックアップしたJSONファイルから記録を復元します。現在の記録と統合されます。</div>
+                        <div className="bg-sec hover:bg-sec-hover transition-colors text-white rounded-[12px] py-4 text-[17px] font-bold">ファイルを選択して復元</div>
+                        <input type="file" accept=".json" onChange={importJSON} className="hidden" />
+                    </label>
+                </div>
+            </main>
+        </div>
+    );
+}
+
+// ===== 管理画面 =====
+function AdminScreen({ setScreen, calcModel, setCalcModel, records }) {
+    const linearRows = [
+        ['165日以下', '20%', '若い親鳥はまだ成熟していません', false],
+        ['165〜230日', '20% → 40%', '成長期：孵化率が上昇します', false],
+        ['230〜250日', '40%（ピーク）', 'ベストな産卵時期です', true],
+        ['250〜530日', '40% → 35%', '成熟期：ゆっくり低下します', false],
+        ['530日以上', '35% → 32%', '高齢になるにつれ低下します', false],
+    ];
+    const normalRows = [
+        ['240日齢', '40%（ピーク）', '理論上の最適日齢', 'text-ok'],
+        ['若い方向', '急激に変化', '日齢が低いと急速に孵化率が落ちます', 'text-[#EA580C]'],
+        ['高齢方向', 'ゆっくり変化', '高齢でも比較的なだらかに低下します', 'text-faint'],
+    ];
+    const storageItems = [
+        ['7日以内', '補正なし（×1.00）', 'text-ok'],
+        ['8〜10日', '5%低下（×0.95）', 'text-brand'],
+        ['11〜16日', '15%低下（×0.85）', 'text-[#EA580C]'],
+        ['17日以上', '40%低下（×0.60）', 'text-[#EF4444]'],
+    ];
+    const seasonItems = [
+        ['春・秋・冬（2〜5月、10〜12月）', '補正なし（×1.00）', 'text-ok'],
+        ['正月明け（1月）', '5%低下（×0.95）', 'text-brand'],
+        ['夏期（6〜9月）', '8%低下（×0.92）', 'text-[#EA580C]'],
+    ];
+    const SectionLabel = ({ children }) => (
+        <div className="text-[17px] font-bold text-[#374151] mb-3.5 pl-3.5 border-l-4 border-brand">{children}</div>
+    );
+
+    const isLinear = calcModel === 'linear';
+    const isNormal = calcModel === 'normal';
+
+    return (
+        <div className="min-h-screen bg-cream flex flex-col">
+            <PageHeader records={records} onBack={() => setScreen('top')} />
+            <TitleBar border="border-line" icon="⚙️" title="管理画面" subtitle="計算モデルと補正係数の設定（引き渡し用ドキュメント）" stack />
+            <main className="flex-1 px-6 sm:px-12 py-7">
+
+                {/* Section 1: モデル選択 */}
+                <SectionLabel>使用する計算モデルを選択</SectionLabel>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-[18px] mb-8">
+
+                    {/* 区分線形 */}
+                    <button onClick={() => setCalcModel('linear')}
+                        className={`text-left bg-white rounded-[16px] p-[22px] transition-all ${isLinear ? 'border-[2.5px] border-brand shadow-[0_2px_12px_rgba(217,119,6,0.1)]' : 'border-[1.5px] border-line'}`}>
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2.5">
+                                <span className="text-[26px]">📐</span>
+                                <span className="text-[18px] font-bold text-ink">区分線形モデル</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className="bg-brand-hd text-brand-deep px-3 py-1 rounded-full text-[12px] font-bold">推奨</div>
+                                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[12px] font-bold ${isLinear ? 'bg-brand text-white' : 'border-2 border-[#D1D5DB] bg-white'}`}>{isLinear ? '✓' : ''}</div>
+                            </div>
+                        </div>
+                        <div className="text-[14px] text-body leading-loose mb-4">カジワラファーム社で積み上げた経験に基づいて作成した、実用的なモデルです。親鳥の日齢を段階ごとに区切り、それぞれの孵化率を設定しています。調整しやすく、結果が直感的に理解できます。</div>
+                        <div className="bg-brand-bg rounded-[10px] px-4 py-3.5">
+                            <div className="text-[12px] font-bold text-brand-deep uppercase tracking-wide mb-2.5">日齢別の孵化率の目安</div>
+                            <div className="grid grid-cols-[100px_110px_1fr] sm:grid-cols-[110px_110px_1fr]">
+                                <div className="text-[11px] font-bold text-faint py-1.5 border-b border-brand-border">日齢範囲</div>
+                                <div className="text-[11px] font-bold text-faint py-1.5 border-b border-brand-border">孵化率</div>
+                                <div className="text-[11px] font-bold text-faint py-1.5 border-b border-brand-border">備考</div>
+                                {linearRows.map(([range, rate, note, peak], i) => (
+                                    <React.Fragment key={i}>
+                                        <div className={`text-[13px] text-body py-2 border-b border-brand-border/40 ${peak ? 'bg-brand/5' : ''}`}>{range}</div>
+                                        <div className={`text-[13px] font-bold py-2 border-b border-brand-border/40 ${peak ? 'text-ok bg-brand/5' : 'text-brand'}`}>{rate}</div>
+                                        <div className={`text-[13px] text-faint py-2 border-b border-brand-border/40 ${peak ? 'bg-brand/5' : ''}`}>{note}</div>
+                                    </React.Fragment>
+                                ))}
+                            </div>
+                        </div>
+                    </button>
+
+                    {/* 非対称正規分布 */}
+                    <button onClick={() => setCalcModel('normal')}
+                        className={`text-left bg-white rounded-[16px] p-[22px] transition-all ${isNormal ? 'border-[2.5px] border-brand shadow-[0_2px_12px_rgba(217,119,6,0.1)]' : 'border-[1.5px] border-line'}`}>
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2.5">
+                                <span className="text-[26px]">📊</span>
+                                <span className="text-[18px] font-bold text-body">非対称正規分布モデル</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className="bg-soft text-faint px-3 py-1 rounded-full text-[12px] font-semibold">参考</div>
+                                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[12px] font-bold ${isNormal ? 'bg-brand text-white' : 'border-2 border-[#D1D5DB] bg-white'}`}>{isNormal ? '✓' : ''}</div>
+                            </div>
+                        </div>
+                        <div className="text-[14px] text-body leading-loose mb-4">区分線形モデルをベースに、孵化率の変化をなめらかな曲線で表したモデルです。若い親鳥ではすばやく変化し、高齢ではゆっくり変化するという非対称な特性も同様に表現しています。</div>
+                        <div className="bg-[#F8F7F6] rounded-[10px] px-4 py-3.5 mb-3.5">
+                            <div className="text-[12px] font-bold text-[#6B7280] uppercase tracking-wide mb-2.5">モデルの特性</div>
+                            <div className="grid grid-cols-[90px_100px_1fr]">
+                                <div className="text-[11px] font-bold text-faint py-1.5 border-b border-line">日齢</div>
+                                <div className="text-[11px] font-bold text-faint py-1.5 border-b border-line">孵化率</div>
+                                <div className="text-[11px] font-bold text-faint py-1.5 border-b border-line">備考</div>
+                                {normalRows.map(([range, rate, note, color], i) => (
+                                    <React.Fragment key={i}>
+                                        <div className="text-[13px] text-body py-2 border-b border-[#F0EFEE]">{range}</div>
+                                        <div className={`text-[13px] font-bold py-2 border-b border-[#F0EFEE] ${color}`}>{rate}</div>
+                                        <div className="text-[13px] text-faint py-2 border-b border-[#F0EFEE]">{note}</div>
+                                    </React.Fragment>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="bg-[#F0EEE9] rounded-[10px] px-3.5 py-3">
+                            <div className="text-[11px] font-bold text-[#6B7280] mb-1.5">計算式</div>
+                            <div className="text-[12px] text-body font-mono leading-relaxed">孵化率 = 24.5 + 15.5 × e^(−0.5×((日齢−240)/σ)²)<br />σ = 32（若い方向） / 300（高齢方向）</div>
+                        </div>
+                    </button>
+                </div>
+
+                {/* Section 2: 補正係数・メス鶏率 */}
+                <SectionLabel>補正係数・メス鶏率（両モデル共通）</SectionLabel>
+                <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_180px] gap-[18px] mb-5">
+                    <div className="bg-white rounded-[14px] px-[22px] py-5 border-[1.5px] border-line">
+                        <div className="flex items-center gap-2.5 mb-3.5"><span className="text-[22px]">🥚</span><span className="text-[16px] font-bold text-[#374151]">貯卵日数の補正</span></div>
+                        {storageItems.map(([label, val, color], i) => (
+                            <div key={i} className={`flex justify-between items-center py-[11px] ${i < storageItems.length - 1 ? 'border-b border-soft' : ''}`}>
+                                <span className="text-[15px] text-[#374151]">{label}</span>
+                                <span className={`text-[15px] font-bold ml-3 ${color}`}>{val}</span>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="bg-white rounded-[14px] px-[22px] py-5 border-[1.5px] border-line">
+                        <div className="flex items-center gap-2.5 mb-3.5"><span className="text-[22px]">🌡️</span><span className="text-[16px] font-bold text-[#374151]">季節補正</span></div>
+                        {seasonItems.map(([label, val, color], i) => (
+                            <div key={i} className={`flex justify-between items-center py-[11px] gap-3 ${i < seasonItems.length - 1 ? 'border-b border-soft' : ''}`}>
+                                <span className="text-[15px] text-[#374151]">{label}</span>
+                                <span className={`text-[15px] font-bold whitespace-nowrap ${color}`}>{val}</span>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="bg-white rounded-[14px] px-4 py-5 border-[1.5px] border-line flex flex-col items-center justify-center text-center gap-2.5">
+                        <span className="text-[28px]">🐔</span>
+                        <div className="text-[15px] font-bold text-[#374151]">メス鶏率</div>
+                        <div className="text-[44px] font-black text-ok leading-none">61%</div>
+                        <div className="text-[13px] text-faint leading-relaxed">総孵化数のうち<br /><strong className="text-[#374151]">61%</strong>をメス鶏として計算<br />（オス：39%）</div>
+                    </div>
+                </div>
+
+                {/* Section 3: 計算式の全体像 */}
+                <SectionLabel>計算式の全体像</SectionLabel>
+                <div className="bg-white rounded-[14px] p-[22px] mb-7 border-[1.5px] border-line">
+                    <div className="text-[14px] text-faint mb-[18px]">各数値がどのように組み合わさって最終的な予測値になるかを示します。</div>
+                    <div className="bg-brand-bg rounded-[12px] px-5 py-4">
+                        <div className="text-[13px] font-bold text-brand mb-2">① 農場ごとの総孵化数</div>
+                        <div className="text-[16px] text-[#374151] leading-relaxed">入卵数 × 基礎孵化率（親鳥の日齢） × 貯卵日数補正 × 季節補正</div>
+                        <div className="text-[13px] text-faint mt-1.5">例：10,000個 × 40% × 1.00 × 0.92 ＝ 3,680羽</div>
+                    </div>
+                    <div className="text-center py-2.5 text-[20px] text-[#D1D5DB]">↓ 全農場を合計</div>
+                    <div className="bg-ok-bg rounded-[12px] px-5 py-4">
+                        <div className="text-[13px] font-bold text-ok mb-2">② 総孵化数（全農場合計）</div>
+                        <div className="text-[16px] text-[#374151] leading-relaxed">農場Aの孵化数 ＋ 農場Bの孵化数 ＋ …</div>
+                    </div>
+                    <div className="text-center py-2.5 text-[20px] text-[#D1D5DB]">↓ メス鶏率をかける</div>
+                    <div className="bg-[#EFF6FF] rounded-[12px] px-5 py-4">
+                        <div className="text-[13px] font-bold text-[#2563EB] mb-2">③ 予測メス鶏数</div>
+                        <div className="text-[16px] text-[#374151] leading-relaxed">総孵化数 × 61%</div>
+                        <div className="text-[13px] text-faint mt-1.5">例：3,680羽 × 61% ＝ 2,245羽</div>
+                    </div>
+                </div>
+
+                <button onClick={() => setScreen('top')}
+                    className="block w-full max-w-[360px] mx-auto bg-brand hover:bg-brand-hover transition-colors text-white rounded-[14px] px-8 py-[18px] text-[18px] font-bold">
+                    設定を保存してホームへ戻る
+                </button>
+            </main>
+        </div>
+    );
+}
+
+// ===== 計算画面 =====
+function CalculationScreen({ setScreen, addRecord, showAlert, records, calcModel }) {
+    const today = new Date().toISOString().split('T')[0];
+    const [date, setDate] = useState(today);
+    const [farms, setFarms] = useState([newFarm()]);
+    const dateRef = useRef(null);
+
+    function newFarm() {
+        return { id: Date.now() + Math.random(), farmName: '', age: '', eggs: '', storageDays: '7' };
+    }
+
+    const month = getMonth(date);
+    const farmResults = useMemo(() => farms.map(f => calcOneFarm(f.age, f.eggs, f.storageDays, month)), [farms, month]);
+    const totalEggs = useMemo(() => farms.reduce((s, f) => s + (parseInt(f.eggs) || 0), 0), [farms]);
+    const totalResult = useMemo(() => calcTotals(farmResults, totalEggs), [farmResults, totalEggs]);
+    const totalPrimary = totalResult ? (calcModel === 'normal' ? totalResult.normal : totalResult.linear) : null;
+
+    const setFarm = (id, key, val) => setFarms(prev => prev.map(f => f.id === id ? { ...f, [key]: val } : f));
+    const removeFarm = (id) => { if (farms.length > 1) setFarms(prev => prev.filter(f => f.id !== id)); };
+    const openPicker = () => { const el = dateRef.current; if (!el) return; if (el.showPicker) el.showPicker(); else el.click(); };
+
+    const saveToRecords = () => {
+        const valid = farms.filter(f => f.farmName.trim() && f.age && f.eggs);
+        if (valid.length === 0) { showAlert('農場名・日齢・入卵数を入力してください', true); return; }
+        const record = {
+            id: Date.now(),
+            recordDate: new Date().toISOString(),
+            incubationDate: date,
+            farms: valid.map(f => {
+                const r = farmResults[farms.indexOf(f)];
+                return {
+                    id: f.id,
+                    farmName: f.farmName.trim(),
+                    parentAge: parseInt(f.age),
+                    eggCount: parseInt(f.eggs),
+                    storageDays: parseInt(f.storageDays) || 0,
+                    predictions: r || null,
+                    actual: { femaleChicks: null, totalChicks: null, recordedDate: null }
+                };
+            }),
+            totalPredictions: totalResult ? { linear: totalResult.linear, normal: totalResult.normal } : null
+        };
+        addRecord(record);
+    };
+
+    const FARM_OPTS = ['農場A', '農場B', '農場C', '農場D', '農場E'];
+    const AGE_PRESETS = [
+        { label: '170〜200日', value: 185 },
+        { label: '230〜250日', value: 240 },
+        { label: '260〜350日', value: 305 },
+        { label: '430日以上', value: 430 },
+    ];
+    const label = modelName(calcModel);
+    const validCount = farms.filter(f => f.farmName.trim() && f.age && f.eggs).length;
+
+    return (
+        <div className="min-h-screen bg-cream flex flex-col">
+            <PageHeader records={records} onBack={() => setScreen('top')} />
+            <TitleBar border="border-brand-hd" icon="🧮" title="入卵数の計算" subtitle="数値を入力すると予測がすぐに更新されます" />
+
+            <main className="flex-1 px-6 sm:px-12 py-6 flex flex-col lg:flex-row gap-6">
+                {/* 左: フォーム */}
+                <div className="flex-1 min-w-0 flex flex-col gap-4">
+                    {/* 入卵日 */}
+                    <div className="bg-white rounded-[16px] px-6 py-5 border-2 border-line">
+                        <div className="text-[15px] font-bold text-body mb-2.5">📅 入卵日</div>
+                        <div className="bg-brand-bg border-2 border-brand-border rounded-[12px] px-5 py-3.5 flex items-center justify-between relative">
+                            <div className="text-[22px] font-bold text-ink">{fmtDateFull(date)}</div>
+                            <button onClick={openPicker} className="bg-brand-border hover:brightness-95 rounded-[10px] px-4 py-2.5 text-[15px] font-bold text-brand-deep flex items-center gap-1.5 transition-all">📅 変更</button>
+                            <input ref={dateRef} type="date" value={date} onChange={e => setDate(e.target.value)}
+                                className="absolute right-[110px] opacity-0 w-px h-px pointer-events-none" />
+                        </div>
+                    </div>
+
+                    {/* 農場カード */}
+                    {farms.map((farm, idx) => {
+                        const isPreset = FARM_OPTS.includes(farm.farmName);
+                        return (
+                            <div key={farm.id} className="bg-white rounded-[16px] px-[18px] py-3.5 border-[2.5px] border-brand-border fade-in">
+                                <div className="flex justify-between items-center mb-2.5">
+                                    <div className="text-[18px] font-bold text-ink">{farm.farmName || `農場 ${idx + 1}`}</div>
+                                    {farms.length > 1 && (
+                                        <button onClick={() => removeFarm(farm.id)}
+                                            className="text-[13px] text-[#EF4444] font-semibold px-3 py-1.5 rounded-[8px] bg-[#FEF2F2] hover:bg-[#FEE2E2] transition-colors">× 削除</button>
+                                    )}
+                                </div>
+
+                                {/* 農場名 */}
+                                <div className="mb-2.5">
+                                    <div className="text-[14px] font-bold text-body mb-1.5">農場名</div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {FARM_OPTS.map(opt => (
+                                            <button key={opt} onClick={() => setFarm(farm.id, 'farmName', opt)}
+                                                className={`px-3.5 py-2 rounded-[10px] text-[15px] transition-colors ${farm.farmName === opt ? 'bg-brand text-white font-semibold' : 'bg-soft text-body font-medium border-2 border-line hover:bg-brand-bg'}`}>
+                                                {opt}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <input type="text" value={isPreset ? '' : farm.farmName}
+                                        onChange={e => setFarm(farm.id, 'farmName', e.target.value)}
+                                        placeholder="その他の農場名を直接入力"
+                                        className={`mt-2 w-full rounded-[10px] px-3 py-2 text-[15px] text-ink outline-none transition-colors placeholder:text-faint ${!isPreset && farm.farmName ? 'bg-brand-bg border-2 border-brand-border' : 'bg-soft border-2 border-line focus:border-brand-border'}`} />
+                                </div>
+
+                                {/* 親鳥日齢 */}
+                                <div className="mb-2.5">
+                                    <div className="text-[14px] font-bold text-body mb-1.5">親鳥日齢</div>
+                                    <div className="inline-flex flex-col gap-[7px] w-full">
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {AGE_PRESETS.map(p => (
+                                                <button key={p.value} onClick={() => setFarm(farm.id, 'age', String(p.value))}
+                                                    className={`px-3 py-[7px] rounded-[10px] text-[13px] transition-colors ${parseInt(farm.age) === p.value ? 'bg-brand text-white font-semibold' : 'bg-soft text-body font-medium border-2 border-line hover:bg-brand-bg'}`}>
+                                                    {p.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <NumberField value={farm.age} onChange={e => setFarm(farm.id, 'age', e.target.value)}
+                                            placeholder="日齢を直接入力（例：240）" unit="日" min="1" max="900"
+                                            box="bg-brand-bg border-brand-border" />
+                                    </div>
+                                </div>
+
+                                {/* 入卵数・貯卵日数 */}
+                                <div className="grid grid-cols-2 gap-2.5">
+                                    <div>
+                                        <div className="text-[14px] font-bold text-body mb-1.5">入卵数</div>
+                                        <NumberField value={farm.eggs} onChange={e => setFarm(farm.id, 'eggs', e.target.value)}
+                                            placeholder="例：10000" unit="個" min="1" max="999999" box="bg-brand-bg border-brand-border" />
+                                    </div>
+                                    <div>
+                                        <div className="text-[14px] font-bold text-body mb-1.5">貯卵日数</div>
+                                        <NumberField value={farm.storageDays} onChange={e => setFarm(farm.id, 'storageDays', e.target.value)}
+                                            placeholder="例：7" unit="日" min="0" max="30" box="bg-brand-bg border-brand-border" />
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+
+                    {/* 農場追加 */}
+                    <button onClick={() => setFarms(prev => [...prev, newFarm()])}
+                        className="border-[2.5px] border-dashed border-brand-border rounded-[14px] py-[18px] text-center text-brand text-[17px] font-bold bg-white hover:bg-brand-bg transition-colors">
+                        ＋ 農場を追加する
+                    </button>
+                </div>
+
+                {/* 右: リアルタイム予測 */}
+                <div className="w-full lg:w-[380px] flex-shrink-0 flex flex-col gap-4 lg:sticky lg:top-6 lg:self-start">
+                    <div className="rounded-[20px] px-7 py-8 text-white bg-[linear-gradient(135deg,#7C3AED,#5B21B6)]">
+                        <div className="text-[12px] opacity-75 font-bold uppercase tracking-wider mb-3.5">リアルタイム予測（{label}）</div>
+                        {totalPrimary ? (
+                            <>
+                                <div className="mb-6">
+                                    <div className="text-[14px] opacity-70 mb-1.5">予測メス鶏数</div>
+                                    <div className="text-[58px] font-black leading-none tracking-tight">{totalPrimary.femaleChicks.toLocaleString()}<span className="text-[24px] font-semibold opacity-80 ml-1">羽</span></div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-3 mb-6">
+                                    <div className="bg-white/[0.18] rounded-[12px] px-4 py-3.5">
+                                        <div className="text-[12px] opacity-70 mb-1">総孵化数</div>
+                                        <div className="text-[22px] font-bold">{totalPrimary.totalChicks.toLocaleString()} 羽</div>
+                                    </div>
+                                    <div className="bg-white/[0.18] rounded-[12px] px-4 py-3.5">
+                                        <div className="text-[12px] opacity-70 mb-1">孵化率</div>
+                                        <div className="text-[22px] font-bold">{totalPrimary.hatchRate} %</div>
+                                    </div>
+                                </div>
+                                <div className="text-[12px] opacity-70 mb-4">{validCount}農場 ／ 総入卵数 {totalResult.totalEggs.toLocaleString()}個</div>
+                                <button onClick={saveToRecords} className="w-full bg-white hover:bg-soft transition-colors rounded-[12px] px-5 py-4 text-[17px] font-bold text-sec">
+                                    この結果を保存する
+                                </button>
+                            </>
+                        ) : (
+                            <div className="py-12 text-center text-white/70 text-[16px] leading-relaxed">農場名・日齢・入卵数を<br />入力すると予測が表示されます</div>
+                        )}
+                    </div>
+                    <div className="bg-brand-bg border-[1.5px] border-brand-border rounded-[12px] px-4 py-3.5">
+                        <div className="text-[13px] text-brand-deep leading-relaxed">💡 農場を追加すると、複数農場の合計予測が自動で計算されます</div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    );
+}
+
+// ===== 孵化実績入力画面（カレンダーファースト） =====
+function HatchResultsScreen({ setScreen, records, updateRecord, showToast, calcModel }) {
+    const now = new Date();
+    const [calYear, setCalYear] = useState(now.getFullYear());
+    const [calMonth, setCalMonth] = useState(now.getMonth());
+    const [selectedDate, setSelectedDate] = useState(null);
+    const [inputs, setInputs] = useState({});
+
+    const recordDates = useMemo(() => new Set(records.map(r => r.incubationDate)), [records]);
+    const recordStatus = useMemo(() => {
+        const m = {};
+        records.forEach(r => {
+            const fs = r.farms || [];
+            m[r.incubationDate] = (fs.length > 0 && fs.every(f => f.actual && f.actual.recordedDate)) ? 'done' : 'progress';
+        });
+        return m;
+    }, [records]);
+    const selectedRecord = useMemo(() =>
+        selectedDate ? records.find(r => r.incubationDate === selectedDate) || null : null,
+        [selectedDate, records]
+    );
+
+    useEffect(() => {
+        if (!selectedRecord) { setInputs({}); return; }
+        const init = {};
+        selectedRecord.farms.forEach(f => {
+            init[f.id] = {
+                female: f.actual?.femaleChicks != null ? String(f.actual.femaleChicks) : '',
+                total: f.actual?.totalChicks != null ? String(f.actual.totalChicks) : ''
+            };
+        });
+        setInputs(init);
+    }, [selectedRecord]);
+
+    const handleChange = (farmId, key, val) => setInputs(prev => ({ ...prev, [farmId]: { ...prev[farmId], [key]: val } }));
+
+    const saveAll = () => {
+        updateRecord(selectedRecord.id, r => ({
+            ...r,
+            farms: r.farms.map(f => {
+                const inp = inputs[f.id];
+                if (!inp) return f;
+                const female = inp.female === '' ? null : (parseInt(inp.female) || null);
+                const total = inp.total === '' ? null : (parseInt(inp.total) || null);
+                const hasAny = female != null || total != null;
+                return { ...f, actual: { femaleChicks: female, totalChicks: total, recordedDate: hasAny ? new Date().toISOString() : (f.actual?.recordedDate || null) } };
+            })
+        }));
+        showToast('実績を保存しました');
+    };
+
+    const prevMonth = () => { if (calMonth === 0) { setCalYear(y => y - 1); setCalMonth(11); } else setCalMonth(m => m - 1); };
+    const nextMonth = () => { if (calMonth === 11) { setCalYear(y => y + 1); setCalMonth(0); } else setCalMonth(m => m + 1); };
+
+    const calDays = useMemo(() => {
+        const first = new Date(calYear, calMonth, 1);
+        const last = new Date(calYear, calMonth + 1, 0);
+        const cells = [];
+        for (let i = 0; i < first.getDay(); i++) cells.push(null);
+        for (let d = 1; d <= last.getDate(); d++) {
+            const ds = `${calYear}-${padZ(calMonth + 1)}-${padZ(d)}`;
+            cells.push({ d, ds, has: recordDates.has(ds) });
+        }
+        return cells;
+    }, [calYear, calMonth, recordDates]);
+
+    const todayStr = `${now.getFullYear()}-${padZ(now.getMonth() + 1)}-${padZ(now.getDate())}`;
+    const cellClass = (cell) => {
+        const base = 'py-2.5 rounded-[10px] text-[16px] transition-all ';
+        if (cell.ds === selectedDate) return base + 'bg-sec text-white font-bold';
+        if (cell.has) {
+            return base + (recordStatus[cell.ds] === 'done'
+                ? 'bg-ok-border text-[#065F46] font-bold hover:brightness-95 cursor-pointer'
+                : 'bg-brand-hd text-brand-deep font-bold hover:brightness-95 cursor-pointer');
+        }
+        if (cell.ds === todayStr) return base + 'text-ink font-bold ring-2 ring-brand-border cursor-default';
+        return base + 'text-ink cursor-default';
+    };
+
+    const Legend = () => (
+        <div className="flex flex-wrap gap-4 mt-3 pt-3 border-t border-line">
+            <div className="flex items-center gap-1.5"><div className="w-3.5 h-3.5 rounded bg-ok-border"></div><span className="text-[13px] text-[#6B7280]">記録あり（完了）</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-3.5 h-3.5 rounded bg-brand-hd"></div><span className="text-[13px] text-[#6B7280]">実績入力中</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-3.5 h-3.5 rounded bg-sec"></div><span className="text-[13px] text-[#6B7280]">選択中</span></div>
+        </div>
+    );
+
+    return (
+        <div className="min-h-screen bg-cream flex flex-col">
+            <PageHeader records={records} border="border-sec-hd" onBack={() => setScreen('top')} />
+            <TitleBar border="border-sec-hd" icon="📋" title="孵化実績入力" subtitle="入卵日を選んで、実際の孵化羽数を記録します" />
+
+            <main className="flex-1 px-6 sm:px-12 py-6 flex flex-col lg:flex-row gap-7">
+                {/* 左: カレンダー */}
+                <div className="flex-1 min-w-0">
+                    <div className="bg-white rounded-[16px] px-6 py-5 border-2 border-line">
+                        <div className="flex items-center justify-between mb-4">
+                            <button onClick={prevMonth} className="w-11 h-11 bg-sec-bg border-2 border-sec-border rounded-[10px] flex items-center justify-center text-[20px] font-bold text-sec hover:brightness-95 transition-all">‹</button>
+                            <div className="text-[20px] font-bold text-ink">{calYear}年 {calMonth + 1}月</div>
+                            <button onClick={nextMonth} className="w-11 h-11 bg-sec-bg border-2 border-sec-border rounded-[10px] flex items-center justify-center text-[20px] font-bold text-sec hover:brightness-95 transition-all">›</button>
+                        </div>
+                        <div className="grid grid-cols-7 gap-1.5 text-center">
+                            {WEEKDAYS.map(d => <div key={d} className="text-[13px] font-bold text-faint py-2">{d}</div>)}
+                            {calDays.map((cell, i) => cell ? (
+                                <button key={i} onClick={() => cell.has && setSelectedDate(cell.ds)} className={cellClass(cell)}>{cell.d}</button>
+                            ) : <div key={i} className="py-2.5" />)}
+                        </div>
+                        <Legend />
+                    </div>
+                </div>
+
+                {/* 右: 実績入力フォーム */}
+                <div className="w-full lg:w-[440px] flex-shrink-0">
+                    {!selectedDate && (
+                        <div className="bg-white rounded-[16px] p-10 text-center border-2 border-line">
+                            <div className="text-[28px] mb-2">👈</div>
+                            <div className="text-[18px] font-bold text-body">カレンダーから日付を選んでください</div>
+                            <div className="text-[14px] text-faint mt-2">色のついた日付に入卵記録があります</div>
+                        </div>
+                    )}
+                    {selectedDate && !selectedRecord && (
+                        <div className="bg-white rounded-[16px] p-10 text-center border-2 border-line">
+                            <div className="text-[18px] font-bold text-ink mb-1">{fmtDateMD(selectedDate)}</div>
+                            <div className="text-[14px] text-faint">この日の入卵記録はありません</div>
+                        </div>
+                    )}
+                    {selectedRecord && (
+                        <div className="bg-white rounded-[16px] px-6 py-5 border-[2.5px] border-sec fade-in">
+                            <div className="text-[18px] font-bold text-ink mb-1">{fmtDateMD(selectedRecord.incubationDate)}の実績入力</div>
+                            <div className="text-[14px] text-faint mb-[18px]">農場ごとに実際の孵化羽数を入力してください</div>
+                            <div className="flex flex-col gap-3.5">
+                                {selectedRecord.farms.map(farm => (
+                                    <FarmActualCard key={farm.id} farm={farm} calcModel={calcModel}
+                                        female={inputs[farm.id]?.female ?? ''} total={inputs[farm.id]?.total ?? ''}
+                                        onChange={handleChange} />
+                                ))}
+                            </div>
+                            <button onClick={saveAll}
+                                className="w-full bg-sec hover:bg-sec-hover transition-colors text-white rounded-[12px] px-5 py-4 text-[18px] font-bold mt-[18px]">
+                                実績を保存する
+                            </button>
+                        </div>
+                    )}
+                </div>
+            </main>
+        </div>
+    );
+}
+
+// ===== 農場別実績入力カード =====
+function FarmActualCard({ farm, female, total, onChange, calcModel }) {
+    const pred = farm.predictions;
+    const primaryPred = pred ? (calcModel === 'normal' ? pred.normal : pred.linear) : null;
+    const femaleActual = parseInt(female) || null;
+    const filledF = female !== '' && female != null;
+    const filledT = total !== '' && total != null;
+
+    return (
+        <div className="bg-sec-bg2 rounded-[12px] px-4 py-3 border-[1.5px] border-sec-border">
+            <div className="flex justify-between items-center mb-2">
+                <div className="text-[17px] font-bold text-ink">{farm.farmName}</div>
+                {primaryPred && <div className="text-[13px] text-sec font-semibold">予測：{primaryPred.femaleChicks.toLocaleString()}羽</div>}
+            </div>
+            <div className="mb-2">
+                <div className="text-[13px] text-body font-semibold mb-1">実際のメス鶏数</div>
+                <NumberField value={female} onChange={e => onChange(farm.id, 'female', e.target.value)}
+                    placeholder="未入力" unit="羽" min="0" box={filledF ? 'bg-white border-sec' : 'bg-white border-sec-border'} />
+            </div>
+            <div>
+                <div className="text-[13px] text-body font-semibold mb-1">実際の総孵化数</div>
+                <NumberField value={total} onChange={e => onChange(farm.id, 'total', e.target.value)}
+                    placeholder="未入力" unit="羽" min="0" box={filledT ? 'bg-white border-sec' : 'bg-white border-sec-border'} />
+            </div>
+
+            {/* 精度分析（実績入力後） */}
+            {femaleActual != null && pred && (
+                <div className="mt-3 bg-ok-bg border border-ok-border rounded-[10px] px-3 py-2.5">
+                    <div className="text-[12px] font-bold text-ok mb-2">予測精度（メス鶏数で比較）</div>
+                    <div className="grid grid-cols-2 gap-2">
+                        {[
+                            { label: '区分線形', predVal: pred.linear?.femaleChicks },
+                            { label: '正規分布', predVal: pred.normal?.femaleChicks }
+                        ].filter(x => x.predVal != null).map((item, i) => {
+                            const diff = femaleActual - item.predVal;
+                            const pct = Math.abs(diff / item.predVal * 100).toFixed(1);
+                            return (
+                                <div key={i} className="bg-white rounded-[8px] px-2 py-2 text-center">
+                                    <div className="text-[12px] text-faint mb-0.5">{item.label}</div>
+                                    <div className={`text-[15px] font-bold ${diff >= 0 ? 'text-ok' : 'text-[#EF4444]'}`}>{diff >= 0 ? '+' : ''}{diff.toLocaleString()}羽</div>
+                                    <div className="text-[12px] text-faint mt-0.5">誤差 {pct}%</div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
