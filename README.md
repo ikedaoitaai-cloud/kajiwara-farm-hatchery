@@ -103,7 +103,6 @@ hatchery-calculator/
 
 - 問題報告: [GitHub Issues](https://github.com/[username]/hatchery-calculator/issues)
 - 機能要望: 上記Issuesへ投稿
-- Email: [your.email@example.com]
 
 ## ライセンス
 
